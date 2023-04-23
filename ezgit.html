@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Projects List</title>
+    <style>
+        @font-face {
+            font-family: "D2CodingLigature";
+            src: url("D2CodingLigature.ttf.ttf");
+        }
+        body {
+            font-family: "D2CodingLigature", sans-serif;
+        }
+        table {
+            border-collapse: collapse;
+            /* width: 100%; */
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+    <table id="projects-table" style="margin-left:auto;margin-right:auto;">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Group</th>
+                <th>Name</th>
+                <th>Modified</th>
+                <th>git</th>
+            </tr>
+        </thead>
+        <tbody>
+        </tbody>
+    </table>
+
+    <script>
+        const apiUrl = "https://git.mihaicosma.com/api/v4/projects";
+
+        async function fetchProjects() {
+            const response = await fetch(apiUrl);
+            const data = await response.json();
+            // sort by last activity date
+            data.sort((a, b) => {return new Date(b.last_activity_at) - new Date(a.last_activity_at);});
+            return data;
+        }
+
+        function formatDate(date) {
+            const now = new Date();
+            const diffInSeconds = Math.floor((now - date) / 1000);
+            const diffInMinutes = Math.floor(diffInSeconds / 60);
+            const diffInHours = Math.floor(diffInMinutes / 60);
+            const diffInDays = Math.floor(diffInHours / 24);
+
+            if (diffInSeconds < 2) {
+                return "just now";
+            } else if (diffInSeconds < 120) {
+                return `${diffInSeconds} seconds ago`;
+            } else if (diffInMinutes < 120) {
+                return `${diffInMinutes} minutes ago`;
+            } else if (diffInHours < 48) {
+                return `${diffInHours} hours ago`;
+            } else if (diffInDays < 7) {
+                return `${diffInDays} days ago`;
+            } else {
+                const options = { year: 'numeric', month: 'long', day: 'numeric' };
+                return date.toLocaleDateString('en-US', options);
+            }
+        }
+
+        function createRow(project) {
+            const row = document.createElement("tr");
+
+            const idCell = document.createElement("td");
+            idCell.textContent = project.id;
+            row.appendChild(idCell);
+
+            const namespaceCell = document.createElement("td");
+            namespaceCell.textContent = project.namespace.name;
+            row.appendChild(namespaceCell);
+
+            const webUrlCell = document.createElement("td");
+            const webUrlLink = document.createElement("a");
+            webUrlLink.href = project.web_url;
+            webUrlLink.textContent = project.name;
+            webUrlLink.target = "_blank";
+            webUrlCell.appendChild(webUrlLink);
+            row.appendChild(webUrlCell);
+
+            const createdAtCell = document.createElement("td");
+            const lastActivityDate = new Date(project.last_activity_at);
+            createdAtCell.textContent = formatDate(lastActivityDate);
+            row.appendChild(createdAtCell);
+
+            const gitCell = document.createElement("td");
+            gitCell.textContent = project.ssh_url_to_repo;
+            row.appendChild(gitCell);
+
+            return row;
+        }
+
+        async function populateTable() {
+            const projects = await fetchProjects();
+            const tableBody = document.querySelector("#projects-table tbody");
+
+            const rows = [];
+            for (const project of projects) {
+                const row = createRow(project);
+                rows.push(row);
+                tableBody.appendChild(row);
+            }
+        }
+
+        populateTable();
+    </script>
+</body>
+</html>
