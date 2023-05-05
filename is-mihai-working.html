@@ -21,6 +21,8 @@
       </thead>
       <tbody></tbody>
     </table>
+    <div id="rate-limit"></div>
+    <div id="unauthenticated-rate-limit"></div>
 
     <script>
       const username = 'wakamex';
@@ -32,28 +34,56 @@
         const response = await fetch(apiUrl, {
           headers: {
             'User-Agent': userAgent,
-            'Authorization': `${GITHUB_API_TOKEN}`,
+            'Authorization': `token ${GITHUB_API_TOKEN}`,
           },
         });
         const data = await response.json();
         const commitInfo = await extractCommitInfo(data);
         displayUserActivity(commitInfo);
+
+        // Report remaining rate limit
+        const remainingRateLimit = response.headers.get('X-RateLimit-Remaining');
+        console.log('Remaining rate limit:', remainingRateLimit);
+        document.querySelector('#rate-limit').textContent = `Remaining rate limit: ${remainingRateLimit}`;
       }
 
       async function extractCommitInfo(activityData) {
         const pushEvents = activityData.filter((event) => event.type === 'PushEvent');
         const commitPromises = pushEvents.flatMap((event) => {
           const repo = event.repo.name;
-          const commits = event.payload.commits.slice(0, 5);
+          const commits = event.payload.commits.filter((commit) => commit.author.email === 'mcosma@gmail.com');
+
+          // check if there are any commits from the user
+            if (commits.length === 0) {
+                return [];
+            }
+
           return commits.map(async (commit) => {
-          const commitResponse = await fetch(`https://api.github.com/repos/${repo}/commits/${commit.sha}`, {
+            var commitResponse = await fetch(`https://api.github.com/repos/${repo}/commits/${commit.sha}`, {
               headers: {
                 'User-Agent': userAgent,
-                'Authorization': `${GITHUB_API_TOKEN}`,
+                'Authorization': `token ${GITHUB_API_TOKEN}`,
               },
             });
-            const commitData = await commitResponse.json();
-            const { additions, deletions } = commitData.stats;
+            var commitData = await commitResponse.json();
+            if (commitData.message === "`delvtech` forbids access via a personal access token with fine-grained permissions. Please use a GitHub App, or an OAuth App.") {
+                commitResponse = await fetch(`https://api.github.com/repos/${repo}/commits/${commit.sha}`);
+                commitData = await commitResponse.json();
+                // Report remaining rate limit
+                const remainingUnauthenticatedRateLimit = commitResponse.headers.get('X-RateLimit-Remaining');
+                console.log('Remaining unauthenticated rate limit:', remainingUnauthenticatedRateLimit);
+                document.querySelector('#unauthenticated-rate-limit').textContent = `Remaining unauthenticated rate limit: ${remainingUnauthenticatedRateLimit}`;
+            }
+
+            var { additions, deletions } = { additions: '?', deletions: '?'}
+            if (!commitData.stats) {
+                console.error('Invalid commit data:', commitData);
+            }
+            else {
+                console.log('Commit data:', commitData);
+                additions = commitData.stats.additions;
+                deletions = commitData.stats.deletions;
+            }
             return {
               repo,
               message: commit.message,
