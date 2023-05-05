@@ -1,0 +1,113 @@
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Is Mihai working?</title>
+    <style>
+      @import url('inline.css');
+    </style>
+  </head>
+  <body style="text-align: center;">
+    <h2>Is Mihai working?</h2>
+    <table id="commit-table" style="margin-left: auto; margin-right: auto;">
+      <thead>
+        <tr>
+          <th>Commit</th>
+          <th>Repo</th>
+          <th>Message</th>
+          <th>Modified</th>
+          <th style="text-align: center;">+/-</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <script>
+      const username = 'wakamex';
+      const apiUrl = `https://api.github.com/users/${username}/events/public`;
+      const GITHUB_API_TOKEN = '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';
+      const userAgent = 'Is-Mihai-working by github user wakamex';
+
+      async function fetchUserActivity() {
+        const response = await fetch(apiUrl, {
+          headers: {
+            'User-Agent': userAgent,
+            'Authorization': `${GITHUB_API_TOKEN}`,
+          },
+        });
+        const data = await response.json();
+        const commitInfo = await extractCommitInfo(data);
+        displayUserActivity(commitInfo);
+      }
+
+      async function extractCommitInfo(activityData) {
+        const pushEvents = activityData.filter((event) => event.type === 'PushEvent');
+        const commitPromises = pushEvents.flatMap((event) => {
+          const repo = event.repo.name;
+          const commits = event.payload.commits.slice(0, 5);
+          return commits.map(async (commit) => {
+          const commitResponse = await fetch(`https://api.github.com/repos/${repo}/commits/${commit.sha}`, {
+              headers: {
+                'User-Agent': userAgent,
+                'Authorization': `${GITHUB_API_TOKEN}`,
+              },
+            });
+            const commitData = await commitResponse.json();
+            const { additions, deletions } = commitData.stats;
+            return {
+              repo,
+              message: commit.message,
+              timestamp: event.created_at,
+              sha: commit.sha,
+              additions,
+              deletions,
+            };
+          });
+        });
+
+        return Promise.all(commitPromises);
+      }
+
+      function displayUserActivity(commitInfo) {
+        const tableBody = document.querySelector('#commit-table tbody');
+
+        commitInfo.forEach((commit) => {
+          const row = document.createElement('tr');
+
+          const commitCell = document.createElement('td');
+          const commitLink = document.createElement('a');
+          commitLink.href = `https://github.com/${commit.repo}/commit/${commit.sha}`;
+          commitLink.target = '_blank';
+          commitLink.textContent = commit.sha.slice(0, 7);
+          commitCell.appendChild(commitLink);
+          row.appendChild(commitCell);
+
+          const repoCell = document.createElement('td');
+          const repoLink = document.createElement('a');
+          repoLink.href = `https://github.com/${commit.repo}`;
+          repoLink.target = '_blank';
+          repoLink.textContent = commit.repo;
+          repoCell.appendChild(repoLink);
+          row.appendChild(repoCell);
+
+          const messageCell = document.createElement('td');
+          messageCell.textContent = commit.message;
+          row.appendChild(messageCell);
+
+          const modifiedCell = document.createElement('td');
+          modifiedCell.textContent = new Date(commit.timestamp).toLocaleString();
+          row.appendChild(modifiedCell);
+
+          const changesCell = document.createElement('td');
+          changesCell.style.textAlign = 'center';
+          changesCell.textContent = `${commit.additions} / -${commit.deletions}`;
+          row.appendChild(changesCell);
+
+          tableBody.appendChild(row);
+        });
+      }
+
+      fetchUserActivity();
+    </script>
+  </body>
+</html>
