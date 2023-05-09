@@ -1,18 +1,33 @@
-from pprint import isreadable
-import harfbuzz as hb
-import codecs
+# %%from pprint import isreadable
+import os
+import pkg_resources
+import sys
+import subprocess
 from typing import Tuple
-from fontTools.ttLib import TTFont, ttGlyphSet
+
+installed_packages = [i.key for i in pkg_resources.working_set]
+if "uharfbuzz" not in installed_packages:
+    print("Installing uharfbuzz")
+    subprocess.run([sys.executable, "-m", "pip", "install", "uharfbuzz"])
+import uharfbuzz as hb  # type: ignore
+
+if "codecs" not in installed_packages:
+    print("Installing codecs")
+    import sys
+
+    subprocess.run([sys.executable, "-m", "pip", "install", "codecs"])
+import codecs
 
 
-def is_emoji_supported_by_font(emoji: str) -> Tuple[bool, Tuple[hb.GlyphInfo]]:
+# %%
+def is_emoji_supported_by_font(hb, emoji: str) -> Tuple[bool, Tuple[hb.GlyphInfo]]:
     # Create text buffer:
     buf = hb.Buffer.create()
     buf.add_str(emoji)
     buf.guess_segment_properties()
 
     # Shape text:
-    features = [hb.Feature("kern", 1), hb.Feature("liga", 1)]
+    features = {"kern": 1, "liga": 1}
     hb.shape(font, buf, features)
 
     # Check if the emoji is supported
@@ -29,72 +44,44 @@ def from_unicode_escape(s):
     return codecs.decode(s, "unicode_escape")
 
 
+# %% [markdown]
+# Load font
 file_path = "D2CodingLigature.ttf"
 
-# tt = TTFont(file_path)
-# print(f"{tt=} {dir(tt)=}")
-# for d in dir(tt):
-#     if d in ["glyphOrder"]:
-#         continue
-#     print(f"{d=} v={getattr(tt,d)}") if not d.startswith("_") else None
+if not os.path.exists(file_path):
+    print("downloading font.", end="")
+    # download font
+    import urllib.request
 
-# print(f"{tt['maxp'].numGlyphs=}")
+    print(".", end="")
 
-# cmap = tt.getBestCmap()
-# cmapr = tt.getReverseGlyphMap()
-# gs: dict[str, ttGlyphSet] = tt.getGlyphSet()
-# print(f"{dir(gs)=}")
-# for d in dir(gs):
-#     if d in ["hMetrics"]:
-#         continue
-#     print(f"{d=} v={getattr(gs,d)}") if not d.startswith("_") else None
-# i = 0
-# for k, char in gs.items():
-#     if i > 1000:
-#         break
-#     glyph = tt["glyf"][k]
-#     if i == 0:
-#         print("char methods:", [d for d in dir(char) if not d.startswith("_")])
-#         print("glyph methods:", [d for d in dir(glyph) if not d.startswith("_")])
-#     if glyph.numberOfContours == -1:
-#         glyph_type = "compound glyph"
-#     elif glyph.numberOfContours == 0:
-#         glyph_type = "empty glyph"
-#     elif glyph.numberOfContours > 0:
-#         glyph_type = "simple glyph"
-#     # gc = glyph.getMaxpValues()
-#     # print(f"{gc=}")
-#     id_ = cmapr[k]
+    url = "https://mihaicosma.com/D2CodingLigature.ttf"
+    urllib.request.urlretrieve(url, file_path)
+    print(". done")
 
-#     # get character
-#     # x = chr(id_)
-#     x = cmap[id_]
-#     # uc = unicode(x)
-#     uc = ""
-#     # de = from_unicode_escape(uc)
-#     de = ""
-
-#     print(f"{i=:5} {id_=:5} original:    {x:5} {uc=:15} {de}     ", end=" ")
-#     name = char.name
-#     lsb, tsb = char.lsb, char.tsb
-#     height, width = char.height, char.width
-#     # print(f"{k=}, {dir(v)=}")
-#     print(f"{lsb=:4}, {tsb=} {height=}, {width=} {k=}")
-#     i += 1
+if not os.path.exists(file_path):
+    raise FileNotFoundError(f"File {file_path} not found")
 
 with open(file_path, "rb") as fontfile:
     fontdata = fontfile.read()
 
-blob = hb.Blob.create(fontdata, length=len(fontdata), mode=1, user_data=None, destroy=None)
-font = hb.Font.create(face=hb.Face.create(blob, 0, autoscale=False))
+font = hb.Font(hb.Face(hb.Blob(fontdata)))
 
+# %% [markdown]
+# Test with one emoji
+# %%
 teststring = "🤗"
 print(teststring)
 print(
-    f"{teststring} suported={is_emoji_supported_by_font(teststring)[0]}"
+    f"{teststring} suported={is_emoji_supported_by_font(hb, teststring)[0]}"
     f" unicode={unicode(teststring)} encoded={from_unicode_escape(unicode(teststring))}"
 )
 
+# ## [markdown]
+# Run the whole test
+# %%
+supported_count = 0
+unsupported_count = 0
 with open("emoji-test.txt", "r", encoding="utf-8") as f:
     lines = f.readlines()
     for line in lines[:]:
@@ -116,18 +103,14 @@ with open("emoji-test.txt", "r", encoding="utf-8") as f:
         code_point = code_point.split(" ")
         double_wide = len(code_point) > 1
         unfullyqualiﬁed = status != "fully-qualified"
-        res = is_emoji_supported_by_font(emoji)
-        is_supported = res[0]
-        if is_supported:
+        res = is_emoji_supported_by_font(hb, emoji)
+        if is_supported := res[0]:
             info: hb.GlyphInfo
-            if res[1]:
-                if res[1][0]:
-                    info = res[1][0]
-                    # for i in res[1]:
-                    #     print(f"{i=}")
+            if res[1] and res[1][0]:
+                info = res[1][0]
             try:
                 name = " ".join(parts[1:])
-            except:
+            except Exception:
                 name = ""
             encoded = from_unicode_escape(unicode(emoji))
             # numspaces = 5 - int(unfullyqualiﬁed) - (code_point[0] == "0000")
@@ -138,3 +121,8 @@ with open("emoji-test.txt", "r", encoding="utf-8") as f:
                 end="",
             )
             print(f" encoded={encoded} name={name}")
+            supported_count += 1
+        else:
+            unsupported_count += 1
+
+print(f"{supported_count=:,.0f} {unsupported_count=:,.0f}")
