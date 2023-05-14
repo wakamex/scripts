@@ -1,9 +1,10 @@
-# %%from pprint import isreadable
+# %%
 import os
 import pkg_resources
 import sys
 import subprocess
 from typing import Tuple
+import urllib.request
 
 installed_packages = [i.key for i in pkg_resources.working_set]
 if "uharfbuzz" not in installed_packages:
@@ -49,14 +50,9 @@ def from_unicode_escape(s):
 file_path = "D2CodingLigature.ttf"
 
 if not os.path.exists(file_path):
-    print("downloading font.", end="")
-    # download font
-    import urllib.request
+    print("downloading font..", end="")
 
-    print(".", end="")
-
-    url = "https://mihaicosma.com/D2CodingLigature.ttf"
-    urllib.request.urlretrieve(url, file_path)
+    urllib.request.urlretrieve("https://mihaicosma.com/D2CodingLigature.ttf", file_path)
     print(". done")
 
 if not os.path.exists(file_path):
@@ -82,6 +78,13 @@ print(
 # %%
 supported_count = 0
 unsupported_count = 0
+
+if not os.path.exists("emoji-test.txt"):
+    print("downloading emoji-test.txt..", end="")
+
+    urllib.request.urlretrieve("https://unicode.org/Public/emoji/15.0/emoji-test.txt", "emoji-test.txt")
+    print(". done")
+
 with open("emoji-test.txt", "r", encoding="utf-8") as f:
     lines = f.readlines()
     for line in lines[:]:
