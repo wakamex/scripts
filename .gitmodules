@@ -1,0 +1,3 @@
+[submodule "darkmode"]
+	path = darkmode
+	url = git@git.mihaicosma.com:mihaico/darkmode.git
