@@ -97,21 +97,20 @@ def find_crossing_spot(df, compare_cols):
 columns = ["Unvaccinated", "mortality"]
 
 pivot_metric = calculate_survival_rate(pivot_metric, columns)
-pivot_metric.frequency = "D"
-print(f"{pivot_metric.index=}")
-print(f"{last_month=}")
 pivot_metric = pivot_metric.loc[:last_month]
 pivot_metric = calculate_cumulative_survival(pivot_metric, columns)
 
 compare_cols = [col + "_cumulative_survival" for col in columns]
+crossing_date, label = find_crossing_spot(pivot_metric, compare_cols)
+pivot_metric.loc[crossing_date, :] = np.nan
+pivot_metric = pivot_metric.sort_values(by="date")
+pivot_metric = pivot_metric.interpolate(method="linear")
+print(f"{pivot_metric=}")
 
 ax = pivot_metric.plot(y=compare_cols, title=f"{sex} {age_group} Survival rate")
-
-crossing_date, label = find_crossing_spot(pivot_metric, compare_cols)
-print(f"{crossing_date=}")
 ax.axvline(x=crossing_date, color="red", linestyle="--", label=label)
-ax.axvline(x=pd.to_datetime("2021-11-01"), color="black", linestyle="--", label=label)
-ax.axvline(x=pd.to_datetime("2021-12-01"), color="black", linestyle="--", label=label)
+# ax.axvline(x=pd.to_datetime("2021-11-01"), color="black", linestyle="--", linewidth=1)
+# ax.axvline(x=pd.to_datetime("2021-12-01"), color="black", linestyle="--", linewidth=1)
 ax.legend();
 
 # %%
