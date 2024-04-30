@@ -1,0 +1,8 @@
+seaborn
+statsmodels
+beautifulsoup4
+scikit-learn
+torch
+python-dotenv
+transformers
+accelerate
