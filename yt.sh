@@ -6,17 +6,16 @@
 # example: ./yt.sh "https://www.youtube.com/watch?v=Ia-zOj8awiI" $((4*60+52)) $((4*60+55))
 
 # download audio and video separately
-bothargs='-f bestvideo,bestaudio -k --no-embed-metadata -o "temp%(autonumber)s"'
+# bothargs='-f bestvideo,bestaudio -k --no-embed-metadata -o "temp%(autonumber)s" --cookies-from-browser firefox'
+bothargs='-f "bestvideo[vcodec=av01]+bestaudio/bestvideo+bestaudio" -k --no-embed-metadata -o "combined" --merge-output-format mp4'
 eval yt-dlp --progress -i \'$1\' $bothargs # using https://github.com/yt-dlp/yt-dlp
 
-# combine in ffmpeg
+# cut if asked for
 [ -n "$2" ] && timeargs=("-ss $2")  # add start time
 [ -n "$3" ] && timeargs+=("-to $3") # add end time
 if [ -n "$2" ]; then                # cut if asked for
-    eval ffmpeg -y -hide_banner $timeargs -i temp00001 tempvideo_cut.mp4
-    eval ffmpeg -y -hide_banner $timeargs -i temp00002 tempaudio_cut.m4a
-    eval ffmpeg -y -hide_banner -i tempvideo_cut.mp4 -i tempaudio_cut.m4a combined.mp4
-else
-    eval ffmpeg -y -hide_banner -i temp00001 -i temp00002 combined.mp4
+    eval ffmpeg -y -hide_banner $timeargs -i combined.mp4 combined_cut.mp4
+    mv combined_cut.mp4 combined.mp4
 fi
-rm temp*
+
+rm temp* 2>/dev/null || true
