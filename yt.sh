@@ -6,8 +6,11 @@
 # example: ./yt.sh "https://www.youtube.com/watch?v=Ia-zOj8awiI" $((4*60+52)) $((4*60+55))
 
 # download audio and video separately
-# bothargs='-f bestvideo,bestaudio -k --no-embed-metadata -o "temp%(autonumber)s" --cookies-from-browser firefox'
-bothargs='-f "bestvideo[vcodec=av01]+bestaudio/bestvideo+bestaudio" -k --no-embed-metadata -o "combined" --merge-output-format mp4'
+# Try multiple format strategies:
+# 1. Best quality combined format
+# 2. Best video + best audio
+# 3. Best available format
+bothargs='-f "b/bv*+ba/b" -k --no-embed-metadata -o "combined.mp4" --merge-output-format mp4'
 eval yt-dlp --progress -i \'$1\' $bothargs # using https://github.com/yt-dlp/yt-dlp
 
 # cut if asked for
@@ -18,4 +21,7 @@ if [ -n "$2" ]; then                # cut if asked for
     mv combined_cut.mp4 combined.mp4
 fi
 
-rm temp* 2>/dev/null || true
+# Clean up any temporary files but preserve combined.mp4
+mv combined.mp4 _combined.mp4 2>/dev/null || true
+rm combined* 2>/dev/null || true
+mv _combined.mp4 combined.mp4 2>/dev/null || true
