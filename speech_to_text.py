@@ -126,8 +126,8 @@ if __name__ == "__main__":
 
         with open(filename, "w") as f:
             for seg in processed:
-                line = f"[{format_timestamp(seg['start'])} -> {format_timestamp(seg['end'])}] {seg['text']}"
-                print(line)
+                line = f"[{format_timestamp(seg['start'])} -> {format_timestamp(seg['end'])}] {seg['text']}\n"
+                print(line, end="")
                 f.write(line)
     else:
         print("Usage: python speech_to_text.py <audio_file> [transcript_file] [language]")
