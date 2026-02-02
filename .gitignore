@@ -4,3 +4,7 @@ jp
 .python-version
 .vscode
 __pycache__
+.claude
+.cryo
+fastest_*.txt
+*.env
