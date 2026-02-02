@@ -6,3 +6,6 @@ torch
 python-dotenv
 transformers
 accelerate
+eth-utils
+hexbytes
+eth-hash[pycryptodome]
