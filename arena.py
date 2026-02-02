@@ -50,6 +50,19 @@ def get_or_create_player(name, rating_dict, create_func):
 # Process the matches
 # format is (player1, player2, date, winner)
 matches = [
+    ("gpt-4o-2024-08-06","gemini-1.5-flash-001","23/09/2024, 16:15:46",1),
+    ("gpt-4o-2024-08-06","gemini-1.5-flash-001","23/09/2024, 16:13:59",0),
+    ("gpt-4o-mini-2024-07-18","gemini-1.5-flash-001","23/09/2024, 16:13:18",0),
+    ("gpt-4o-2024-08-06","gemini-1.5-pro-001","23/09/2024, 16:13:04",1),
+    ("gemini-1.5-flash-001","gpt-4o-2024-08-06","23/09/2024, 16:03:33",1),
+    ("chatgpt-4o-latest","codestral-2405","11/09/2024, 13:56:01",1),
+    ("gemini-1.5-flash-001","claude-3-5-sonnet-20240620","11/09/2024, 13:55:12",1),
+    ("meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo","deepseek-coder-fim","11/09/2024, 13:48:49",1),
+    ("claude-3-5-sonnet-20240620","meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo","11/09/2024, 13:44:33",0),
+    ("gemini-1.5-pro-exp-0827","meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo","11/09/2024, 13:44:16",0),
+    ("codestral-2405","meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo","11/09/2024, 13:43:22",0),
+    ("meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo","gpt-4o-mini-2024-07-18","11/09/2024, 13:24:51",1),
+    ("claude-3-5-sonnet-20240620","chatgpt-4o-latest","11/09/2024, 13:24:03",0),
     ("meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", "gemini-1.5-flash-001", "09/09/2024, 23:43:57", 1),
     ("gemini-1.5-flash-001", "codestral-2405", "09/09/2024, 23:38:03", 1),
     ("deepseek-coder-fim", "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", "09/09/2024, 23:32:48", 0),
