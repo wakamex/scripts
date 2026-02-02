@@ -29,16 +29,22 @@
       const apiUrl = `https://api.github.com/users/${username}/events/public`;
       const GITHUB_API_TOKEN = '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';
       const userAgent = 'Is-Mihai-working by github user wakamex';
+      const NUM_PAGES = 2;
 
       async function fetchUserActivity() {
-        const response = await fetch(apiUrl, {
-          headers: {
-            'User-Agent': userAgent,
-            'Authorization': `token ${GITHUB_API_TOKEN}`,
-          },
-        });
-        const data = await response.json();
-        const commitInfo = await extractCommitInfo(data);
+        var commitInfo = [];
+        for (let i = 0; i < NUM_PAGES; i++) {
+          const response = await fetch(apiUrl + `?page=${i+1}`, {
+            headers: {
+              'User-Agent': userAgent,
+              'Authorization': `token ${GITHUB_API_TOKEN}`,
+            },
+          });
+          var data = await response.json(); 
+          console.log(data);
+          const newCommitInfo = await extractCommitInfo(data);
+          commitInfo.push(newCommitInfo);
+        }
         displayUserActivity(commitInfo);
 
         // Report remaining rate limit
