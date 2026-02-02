@@ -1,2 +1,2 @@
 # /bin/zsh
-watch -n 0.1 sudo swapon --show
+watch -n 10 swapon --show
