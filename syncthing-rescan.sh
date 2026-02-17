@@ -5,8 +5,8 @@
 set -euo pipefail
 
 PORT="${SYNCTHING_PORT:-8384}"
-API_KEY=$(grep -oP '(?<=<apikey>)[^<]+' ~/.config/syncthing/config.xml 2>/dev/null \
-       || grep -oP '(?<=<apikey>)[^<]+' ~/.local/state/syncthing/config.xml)
+API_KEY=$(sed -n 's/.*<apikey>\([^<]*\)<.*/\1/p' ~/.config/syncthing/config.xml 2>/dev/null \
+       || sed -n 's/.*<apikey>\([^<]*\)<.*/\1/p' ~/.local/state/syncthing/config.xml)
 
 URL="https://localhost:${PORT}/rest/db/scan"
 [[ -n "${1:-}" ]] && URL="${URL}?folder=$1"
