@@ -28,11 +28,8 @@ def make_private_key(extra_entropy: str = "SOME STRING") -> str:
 
 
 def main():
-    """Generate a private key and save it to private_key.txt."""
-    private_key = make_private_key()
-    with open("private_key.txt", "w") as f:
-        f.write(private_key)
-    print(f"Private key saved to private_key.txt")
+    """Generate a private key and print to stdout."""
+    print(make_private_key(), end="")
 
 
 if __name__ == "__main__":
