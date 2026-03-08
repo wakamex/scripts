@@ -131,6 +131,7 @@ def parse_args() -> argparse.Namespace:
     tps.add_argument("--provider", help="Filter to a specific provider slug (e.g. openai, azure)")
     tps.add_argument("--sort", choices=("throughput", "latency", "requests"), default="throughput", help="Sort key")
     tps.add_argument("--reverse", action="store_true", help="Reverse sort order")
+    tps.add_argument("--logprobs", action="store_true", help="Only show models that support logprobs")
     tps.add_argument("--no-cache", action="store_true", help="Bypass cache")
 
     chat = subparsers.add_parser("chat", help="Run a one-shot chat completion")
@@ -284,6 +285,11 @@ def cmd_tps_model(args: argparse.Namespace) -> int:
         if not endpoints:
             raise OpenRouterError(f"no endpoint for provider '{args.provider}'")
 
+    if args.logprobs:
+        endpoints = [ep for ep in endpoints if "logprobs" in (ep.get("supported_parameters") or [])]
+        if not endpoints:
+            raise OpenRouterError(f"no endpoints with logprobs support for {args.model}")
+
     sort_keys = {
         "throughput": lambda ep: (ep.get("stats") or {}).get("p50_throughput", 0),
         "latency": lambda ep: (ep.get("stats") or {}).get("p50_latency", float("inf")),
@@ -334,13 +340,14 @@ def cmd_tps_model(args: argparse.Namespace) -> int:
             "eff_in$/M": fmt_eff_price(eff, "effectiveInputPrice") if eff else "",
             "eff_out$/M": fmt_eff_price(eff, "effectiveOutputPrice") if eff else "",
             "cache%": fmt_pct(eff.get("cacheHitRate")) if eff else "",
+            "logp": "y" if "logprobs" in (ep.get("supported_parameters") or []) else "",
             "quant": ep.get("quantization", ""),
         })
     if bench:
         parts = [f"{k}={v}" for k, v in bench.items() if v is not None]
         if parts:
             print(f"benchmarks: {', '.join(parts)}", file=sys.stderr)
-    print_table(rows, ["provider", "p50_tps", "p50_lat", "p99_lat", "reqs", "ctx", "in$/M", "out$/M", "eff_in$/M", "eff_out$/M", "cache%", "quant"])
+    print_table(rows, ["provider", "p50_tps", "p50_lat", "p99_lat", "reqs", "ctx", "in$/M", "out$/M", "eff_in$/M", "eff_out$/M", "cache%", "logp", "quant"])
     return 0
 
 
@@ -384,6 +391,8 @@ def cmd_tps_all(args: argparse.Namespace) -> int:
     reverse = (args.sort != "latency") ^ args.reverse
     entries.sort(key=sort_keys[args.sort], reverse=reverse)
     entries = [e for e in entries if e["stats"]]
+    if args.logprobs:
+        entries = [e for e in entries if e["endpoint"] and "logprobs" in (e["endpoint"].get("supported_parameters") or [])]
     if args.limit > 0:
         entries = entries[: args.limit]
 
@@ -434,11 +443,12 @@ def cmd_tps_all(args: argparse.Namespace) -> int:
             "eff_in$/M": fmt_eff_price(eff, "effectiveInputPrice") if eff else "",
             "eff_out$/M": fmt_eff_price(eff, "effectiveOutputPrice") if eff else "",
             "cache%": fmt_pct(eff.get("cacheHitRate")) if eff else "",
+            "logp": "y" if best and "logprobs" in (best.get("supported_parameters") or []) else "",
             "intel": fmt_score(bench.get("intelligence")),
             "code": fmt_score(bench.get("coding")),
             "agent": fmt_score(bench.get("agentic")),
         })
-    print_table(rows, ["model", "provider", "p50_tps", "p50_lat", "p99_lat", "reqs", "ctx", "in$/M", "out$/M", "eff_in$/M", "eff_out$/M", "cache%", "intel", "code", "agent"])
+    print_table(rows, ["model", "provider", "p50_tps", "p50_lat", "p99_lat", "reqs", "ctx", "in$/M", "out$/M", "eff_in$/M", "eff_out$/M", "cache%", "logp", "intel", "code", "agent"])
     return 0
 
 
