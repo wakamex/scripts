@@ -1,0 +1,50 @@
+#!/bin/bash
+# Agent Wars: Claude vs Codex live agent count comparison
+
+claude=$(pgrep -c claude 2>/dev/null || echo 0)
+codex=$(pgrep -c codex 2>/dev/null || echo 0)
+total=$((claude + codex))
+
+quips_claude_wins=(
+  "claude showed up like it's moving apartments. codex sent a guy with a backpack."
+  "claude brought the whole squad. codex carpooled."
+  "claude is running a small government. codex is a freelancer."
+  "claude treats RAM like a buffet. codex packed a lunch."
+  "claude called in reinforcements. codex is doing everything himself."
+  "claude has more workers than a heist movie. codex is a one-man job."
+)
+
+quips_codex_wins=(
+  "codex woke up today and chose violence."
+  "codex brought friends. claude is napping."
+  "plot twist."
+  "codex is efficient. claude is just loud."
+  "fewer processes, more intent. codex read the art of war."
+  "codex doing more with less. claude hired a committee."
+)
+
+quips_tie=(
+  "perfectly balanced, as all things should be."
+  "the multiverse is stable... for now."
+)
+
+quips_neither=(
+  "...it's quiet. too quiet."
+  "both asleep. just you and the kernel."
+)
+
+pick() { local arr=("$@"); echo "${arr[$((RANDOM % ${#arr[@]}))]}" ; }
+
+echo
+echo "  ⚔️  AGENTS ⚔️"
+echo
+printf "  claude %4d 🟣%s\n" "$claude" "$(printf '🟣%.0s' $(seq 1 "$claude" 2>/dev/null))"
+printf "  codex  %4d 🟢%s\n" "$codex"  "$(printf '🟢%.0s' $(seq 1 "$codex"  2>/dev/null))"
+echo
+
+if   ((claude == 0 && codex == 0)); then pick "${quips_neither[@]}"
+elif ((claude == codex));            then pick "${quips_tie[@]}"
+elif ((claude > codex));             then pick "${quips_claude_wins[@]}"
+else                                      pick "${quips_codex_wins[@]}"
+fi
+echo
