@@ -1,0 +1,268 @@
+#!/usr/bin/env python3
+"""Print current Claude, Codex, and Antigravity quota burn rates."""
+
+import argparse
+import json
+import math
+from datetime import UTC, datetime
+from pathlib import Path
+
+
+CACHES = {
+    "claude": Path.home() / ".claude" / "usage-limits.json",
+    "codex": Path.home() / ".codex" / "usage-limits.json",
+    "agy": Path.home() / ".gemini" / "antigravity-cli" / "usage-limits.json",
+}
+
+CLAUDE_META_KEYS = {"plan", "source", "updated_at", "extra_usage"}
+
+
+def parse_time(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def reset_in(value: str | None) -> str:
+    reset = parse_time(value)
+    if not reset:
+        return ""
+    seconds = int((reset - datetime.now(UTC)).total_seconds())
+    if seconds <= 0:
+        return "now"
+    minutes = seconds // 60
+    if minutes >= 24 * 60:
+        return f"{minutes // (24 * 60)}d{minutes % (24 * 60) // 60}h"
+    if minutes >= 60:
+        return f"{minutes // 60}h{minutes % 60}m"
+    return f"{minutes}m"
+
+
+def burn_rate(used_pct: float, resets_at: str | None, period_hours: float | None) -> float | None:
+    if used_pct <= 0:
+        return 0.0
+    if period_hours is None:
+        return None
+    reset = parse_time(resets_at)
+    if not reset:
+        return None
+    remaining_hours = (reset - datetime.now(UTC)).total_seconds() / 3600
+    if remaining_hours <= 0:
+        return None
+    budget_left = 100 - used_pct
+    if budget_left <= 0:
+        return math.inf
+    time_left = (remaining_hours / period_hours) * 100
+    return time_left / budget_left
+
+
+def fmt_burn(value: float | None) -> str:
+    if value is None:
+        return "-"
+    if math.isinf(value):
+        return "inf"
+    if value >= 10:
+        return ">10x"
+    return f"{value:.2f}x"
+
+
+def print_row(
+    tool: str,
+    label: str,
+    used_pct: float,
+    resets_at: str | None,
+    period_hours: float | None,
+    weekly_only: bool = False,
+):
+    if weekly_only and (period_hours is None or abs(period_hours - 168) / 168 > 0.1):
+        return
+    burn = burn_rate(used_pct, resets_at, period_hours)
+    reset = reset_in(resets_at)
+    print(f"{tool:7s} {label:30s} {used_pct:6.1f}% used  burn {fmt_burn(burn):>5s}  resets {reset or '-'}")
+
+
+def load_cache(name: str) -> dict | None:
+    path = CACHES[name]
+    try:
+        data = json.loads(path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
+        print(f"{name:7s} unavailable: {exc}")
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def claude_bucket_label(key: str) -> str:
+    if key == "5h":
+        return "Session (5h)"
+    if key == "7d":
+        return "Week (all models)"
+    if key.startswith("7d_"):
+        return f"Week ({key[3:].replace('_', ' ').title()})"
+    return key.replace("_", " ").title()
+
+
+def claude_bucket_hours(key: str) -> float | None:
+    if key == "5h":
+        return 5
+    if key == "7d" or key.startswith("7d_"):
+        return 168
+    return None
+
+
+def claude_bucket_order(key: str) -> tuple[int, str]:
+    if key == "5h":
+        return (0, key)
+    if key == "7d":
+        return (1, key)
+    if key.startswith("7d_"):
+        return (2, key)
+    return (3, key)
+
+
+def print_claude(data: dict, weekly_only: bool = False, main_only: bool = False):
+    for key, bucket in sorted(data.items(), key=lambda item: claude_bucket_order(item[0])):
+        if key in CLAUDE_META_KEYS:
+            continue
+        if main_only and key not in {"5h", "7d"}:
+            continue
+        if not isinstance(bucket, dict) or bucket.get("pct") is None:
+            continue
+        hours = claude_bucket_hours(key)
+        if hours is None:
+            continue
+        print_row("claude", claude_bucket_label(key), float(bucket["pct"]), bucket.get("resets_at"), hours, weekly_only)
+
+    extra = data.get("extra_usage")
+    if not weekly_only and not main_only and isinstance(extra, dict) and extra.get("is_enabled"):
+        used = extra.get("used_credits")
+        limit = extra.get("monthly_limit")
+        if isinstance(used, int | float) and isinstance(limit, int | float) and limit:
+            pct = max(0.0, min(100.0, (float(used) / float(limit)) * 100))
+            print(f"{'claude':7s} {'Extra usage':30s} {pct:6.1f}% used  burn {'-':>5s}  resets -")
+
+
+CODEX_WINDOW_CLASSES = (
+    (5, "Session (5h)"),
+    (24, "Daily"),
+    (168, "Week (7d)"),
+    (30 * 24, "Month (30d)"),
+    (365 * 24, "Year (365d)"),
+)
+
+
+def codex_window_hours(bucket: dict, fallback_hours: float | None = None) -> float | None:
+    seconds = bucket.get("window_secs")
+    if isinstance(seconds, int | float) and not isinstance(seconds, bool) and seconds > 0:
+        return float(seconds) / 3600
+    return fallback_hours
+
+
+def codex_window_label(kind: str, hours: float | None) -> str:
+    if hours is not None:
+        for expected_hours, label in CODEX_WINDOW_CLASSES:
+            if abs(hours - expected_hours) / expected_hours <= 0.1:
+                return label
+    return kind.title()
+
+
+def codex_windows(data: dict) -> list[tuple[str, dict, float | None]]:
+    if data.get("schema_version", 1) >= 2 or any(key in data for key in ("primary", "secondary")):
+        windows = []
+        for kind in ("primary", "secondary"):
+            bucket = data.get(kind)
+            if isinstance(bucket, dict):
+                windows.append((kind, bucket, codex_window_hours(bucket)))
+        return windows
+
+    windows = []
+    for key, kind, fallback_hours in (
+        ("5h", "primary", 5),
+        ("7d", "secondary", 168),
+    ):
+        bucket = data.get(key)
+        if isinstance(bucket, dict):
+            windows.append((kind, bucket, codex_window_hours(bucket, fallback_hours)))
+    return windows
+
+
+def print_codex(data: dict, weekly_only: bool = False):
+    for kind, bucket, hours in codex_windows(data):
+        if bucket.get("pct") is None:
+            continue
+        print_row(
+            "codex",
+            codex_window_label(kind, hours),
+            float(bucket["pct"]),
+            bucket.get("resets_at"),
+            hours,
+            weekly_only,
+        )
+
+
+def agy_period_hours(bucket: dict) -> float | None:
+    window = str(bucket.get("window") or "").lower()
+    name = str(bucket.get("display_name") or "").lower()
+    if window == "5h" or "five hour" in name:
+        return 5
+    if window in {"weekly", "1w", "7d"} or "weekly" in name:
+        return 168
+    return None
+
+
+def print_agy(data: dict, weekly_only: bool = False, main_only: bool = False):
+    summary = data.get("quota_summary")
+    if not isinstance(summary, dict):
+        print(f"agy     unavailable: {data.get('quota_summary_error') or 'no quota summary'}")
+        return
+
+    for group in summary.get("groups") or []:
+        if not isinstance(group, dict):
+            continue
+        group_name = str(group.get("display_name") or "Agy")
+        if main_only and "gemini" not in group_name.lower():
+            continue
+        for bucket in group.get("buckets") or []:
+            if not isinstance(bucket, dict) or bucket.get("disabled"):
+                continue
+            remaining_pct = bucket.get("remaining_pct")
+            hours = agy_period_hours(bucket)
+            if remaining_pct is None or hours is None:
+                continue
+            label = f"{group_name} · {bucket.get('display_name') or 'Quota'}"
+            print_row(
+                "agy",
+                label,
+                max(0.0, 100 - float(remaining_pct)),
+                bucket.get("reset_time"),
+                hours,
+                weekly_only,
+            )
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Print usage burn rates from local daemon caches")
+    parser.add_argument("--weekly", action="store_true", help="Only print weekly / 7-day quota windows")
+    parser.add_argument("--main", action="store_true", help="Only print main quota buckets")
+    args = parser.parse_args()
+
+    claude = load_cache("claude")
+    if claude:
+        print_claude(claude, weekly_only=args.weekly, main_only=args.main)
+
+    codex = load_cache("codex")
+    if codex:
+        print_codex(codex, weekly_only=args.weekly)
+
+    agy = load_cache("agy")
+    if agy:
+        print_agy(agy, weekly_only=args.weekly, main_only=args.main)
+
+
+if __name__ == "__main__":
+    main()
