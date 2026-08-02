@@ -151,6 +151,25 @@ class GenericDurationTests(unittest.TestCase):
         self.assertIn("25.0% used", rendered)
         self.assertIn("burn     -", rendered)
 
+    def test_print_claude_reports_unavailable_without_stale_buckets(self):
+        output = StringIO()
+        with redirect_stdout(output):
+            print_claude({
+                "status": "unavailable",
+                "unavailable": {
+                    "hint": "no active subscription or organization OAuth disabled",
+                },
+                "session": {"pct": 25, "resets_at": None},
+            })
+
+        rendered = output.getvalue()
+        self.assertIn(
+            "claude  unavailable: no active subscription or organization OAuth disabled",
+            rendered,
+        )
+        self.assertNotIn("Session", rendered)
+        self.assertNotIn("25.0%", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()

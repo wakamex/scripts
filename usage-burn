@@ -15,7 +15,10 @@ CACHES = {
     "agy": Path.home() / ".gemini" / "antigravity-cli" / "usage-limits.json",
 }
 
-CLAUDE_META_KEYS = {"plan", "source", "updated_at", "extra_usage"}
+CLAUDE_META_KEYS = {
+    "plan", "source", "updated_at", "last_success_at", "status",
+    "unavailable", "extra_usage",
+}
 
 
 def parse_time(value: str | None) -> datetime | None:
@@ -129,6 +132,12 @@ def claude_bucket_order(key: str) -> tuple[int, str]:
 
 
 def print_claude(data: dict, weekly_only: bool = False, main_only: bool = False):
+    unavailable = data.get("unavailable")
+    if data.get("status") == "unavailable" and isinstance(unavailable, dict):
+        reason = unavailable.get("hint") or unavailable.get("message") or "usage unavailable"
+        print(f"{'claude':7s} unavailable: {reason}")
+        return
+
     for key, bucket in sorted(data.items(), key=lambda item: claude_bucket_order(item[0])):
         if key in CLAUDE_META_KEYS:
             continue
