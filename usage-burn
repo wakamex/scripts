@@ -4,6 +4,7 @@
 import argparse
 import json
 import math
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -98,6 +99,8 @@ def load_cache(name: str) -> dict | None:
 
 
 def claude_bucket_label(key: str) -> str:
+    if key == "session":
+        return "Session"
     if key == "5h":
         return "Session (5h)"
     if key == "7d":
@@ -116,7 +119,7 @@ def claude_bucket_hours(key: str) -> float | None:
 
 
 def claude_bucket_order(key: str) -> tuple[int, str]:
-    if key == "5h":
+    if key in {"session", "5h"}:
         return (0, key)
     if key == "7d":
         return (1, key)
@@ -129,13 +132,11 @@ def print_claude(data: dict, weekly_only: bool = False, main_only: bool = False)
     for key, bucket in sorted(data.items(), key=lambda item: claude_bucket_order(item[0])):
         if key in CLAUDE_META_KEYS:
             continue
-        if main_only and key not in {"5h", "7d"}:
+        if main_only and key not in {"session", "5h", "7d"}:
             continue
         if not isinstance(bucket, dict) or bucket.get("pct") is None:
             continue
         hours = claude_bucket_hours(key)
-        if hours is None:
-            continue
         print_row("claude", claude_bucket_label(key), float(bucket["pct"]), bucket.get("resets_at"), hours, weekly_only)
 
     extra = data.get("extra_usage")
@@ -205,14 +206,85 @@ def print_codex(data: dict, weekly_only: bool = False):
         )
 
 
-def agy_period_hours(bucket: dict) -> float | None:
-    window = str(bucket.get("window") or "").lower()
-    name = str(bucket.get("display_name") or "").lower()
-    if window == "5h" or "five hour" in name:
-        return 5
-    if window in {"weekly", "1w", "7d"} or "weekly" in name:
-        return 168
+_DURATION_UNIT_HOURS = {
+    "m": 1 / 60,
+    "min": 1 / 60,
+    "minute": 1 / 60,
+    "minutes": 1 / 60,
+    "h": 1,
+    "hr": 1,
+    "hour": 1,
+    "hours": 1,
+    "d": 24,
+    "day": 24,
+    "days": 24,
+    "w": 168,
+    "week": 168,
+    "weeks": 168,
+}
+
+_DURATION_ALIASES = {
+    "hourly": 1,
+    "daily": 24,
+    "weekly": 168,
+}
+
+_NUMBER_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+}
+
+
+def duration_hours(value: object) -> float | None:
+    text = str(value or "").strip().lower()
+    if not text:
+        return None
+    if text in _DURATION_ALIASES:
+        return float(_DURATION_ALIASES[text])
+
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*([a-z]+)", text)
+    if match and match.group(2) in _DURATION_UNIT_HOURS:
+        return float(match.group(1)) * _DURATION_UNIT_HOURS[match.group(2)]
+
+    match = re.fullmatch(
+        r"p(?:(\d+(?:\.\d+)?)d)?(?:t(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m)?)?",
+        text,
+    )
+    if match and any(part is not None for part in match.groups()):
+        days, hours, minutes = (float(part or 0) for part in match.groups())
+        return days * 24 + hours + minutes / 60
+
+    match = re.search(
+        r"\b(\d+(?:\.\d+)?|" + "|".join(_NUMBER_WORDS) + r")\s*"
+        r"(minutes?|hours?|days?|weeks?)\b",
+        text,
+    )
+    if match:
+        amount = _NUMBER_WORDS.get(match.group(1), match.group(1))
+        return float(amount) * _DURATION_UNIT_HOURS[match.group(2)]
+    for alias, hours in _DURATION_ALIASES.items():
+        if re.search(rf"\b{alias}\b", text):
+            return float(hours)
     return None
+
+
+def agy_period_hours(bucket: dict) -> float | None:
+    seconds = bucket.get("window_secs")
+    if isinstance(seconds, int | float) and not isinstance(seconds, bool) and seconds > 0:
+        return float(seconds) / 3600
+    return duration_hours(bucket.get("window")) or duration_hours(
+        bucket.get("display_name")
+    )
 
 
 def print_agy(data: dict, weekly_only: bool = False, main_only: bool = False):
@@ -232,7 +304,7 @@ def print_agy(data: dict, weekly_only: bool = False, main_only: bool = False):
                 continue
             remaining_pct = bucket.get("remaining_pct")
             hours = agy_period_hours(bucket)
-            if remaining_pct is None or hours is None:
+            if remaining_pct is None:
                 continue
             label = f"{group_name} · {bucket.get('display_name') or 'Quota'}"
             print_row(

@@ -6,6 +6,10 @@ from pathlib import Path
 
 
 USAGE_BURN = runpy.run_path(Path(__file__).with_name("usage-burn"))
+agy_period_hours = USAGE_BURN["agy_period_hours"]
+duration_hours = USAGE_BURN["duration_hours"]
+print_agy = USAGE_BURN["print_agy"]
+print_claude = USAGE_BURN["print_claude"]
 codex_windows = USAGE_BURN["codex_windows"]
 print_codex = USAGE_BURN["print_codex"]
 
@@ -82,6 +86,70 @@ class CodexUsageTests(unittest.TestCase):
 
         self.assertNotIn("Spark", output)
         self.assertEqual(output.count("codex"), 1)
+
+
+class GenericDurationTests(unittest.TestCase):
+    def test_duration_hours_parses_machine_and_display_values(self):
+        cases = {
+            "24h": 24,
+            "2d": 48,
+            "weekly": 168,
+            "P1DT12H": 36,
+            "Five Hour Limit": 5,
+            "30 minutes": 0.5,
+        }
+        for value, expected in cases.items():
+            with self.subTest(value=value):
+                self.assertEqual(duration_hours(value), expected)
+
+    def test_agy_period_prefers_explicit_seconds(self):
+        bucket = {
+            "window_secs": 86_400,
+            "window": "weekly",
+            "display_name": "Weekly Limit",
+        }
+        self.assertEqual(agy_period_hours(bucket), 24)
+
+    def test_print_agy_keeps_unknown_and_new_durations(self):
+        data = {
+            "quota_summary": {
+                "groups": [
+                    {
+                        "display_name": "Gemini Models",
+                        "buckets": [
+                            {
+                                "display_name": "Daily Limit",
+                                "window": "daily",
+                                "remaining_pct": 75,
+                            },
+                            {
+                                "display_name": "Flexible Limit",
+                                "window": "flexible",
+                                "remaining_pct": 80,
+                            },
+                        ],
+                    }
+                ]
+            }
+        }
+        output = StringIO()
+        with redirect_stdout(output):
+            print_agy(data)
+
+        rendered = output.getvalue()
+        self.assertIn("Daily Limit", rendered)
+        self.assertIn("Flexible Limit", rendered)
+        self.assertIn("burn     -", rendered)
+
+    def test_print_claude_keeps_semantic_session_without_guessing_period(self):
+        output = StringIO()
+        with redirect_stdout(output):
+            print_claude({"session": {"pct": 25, "resets_at": None}})
+
+        rendered = output.getvalue()
+        self.assertIn("Session", rendered)
+        self.assertIn("25.0% used", rendered)
+        self.assertIn("burn     -", rendered)
 
 
 if __name__ == "__main__":
