@@ -344,6 +344,46 @@ def transcribe_parakeet(audio_path: str, timestamps: bool) -> list[str]:
     return render_segments(all_segments, timestamps)
 
 
+def cuda_compute_processes() -> list[dict[str, str]]:
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-compute-apps=pid,used_memory,process_name",
+                "--format=csv,noheader,nounits",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as error:
+        raise RuntimeError("Could not inspect CUDA usage with nvidia-smi") from error
+
+    processes = []
+    for line in result.stdout.splitlines():
+        fields = [field.strip() for field in line.split(",", 2)]
+        if len(fields) == 3:
+            processes.append(
+                {"pid": fields[0], "memory_mib": fields[1], "name": fields[2]}
+            )
+    return processes
+
+
+def require_exclusive_cuda() -> None:
+    processes = cuda_compute_processes()
+    if not processes:
+        return
+    usage = "; ".join(
+        f"PID {process['pid']} {process['name']} ({process['memory_mib']} MiB)"
+        for process in processes
+    )
+    raise RuntimeError(
+        "Parakeet long-form transcription requires exclusive GPU access. "
+        f"CUDA is already in use by {usage}. Stop the conflicting workload explicitly "
+        "or use --engine whisper-large-v3."
+    )
+
+
 def transcribe_local_whisper(
     audio_path: str,
     language: str,
@@ -465,6 +505,12 @@ def main():
         parser.error(f"--speakers is not supported with --engine {args.engine}")
     if args.engine == "parakeet" and args.language != "en":
         parser.error("Parakeet TDT 0.6B v3 supports English only; use --language en")
+
+    if args.engine == "parakeet" and not args.parakeet_runtime_ready:
+        try:
+            require_exclusive_cuda()
+        except RuntimeError as error:
+            parser.error(str(error))
 
     if args.engine == "parakeet" and not args.parakeet_runtime_ready:
         restart_with_parakeet_runtime()

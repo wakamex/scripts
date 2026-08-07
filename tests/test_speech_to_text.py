@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -33,6 +34,32 @@ def test_render_parakeet_segments_without_timestamps() -> None:
     )
 
     assert lines == ["A local transcript."]
+
+
+def test_parakeet_requires_exclusive_cuda(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        speech_to_text.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            stdout="3341630, 3150, /code/transcribe/.venv/bin/python3\n"
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="exclusive GPU access") as error:
+        speech_to_text.require_exclusive_cuda()
+
+    assert "PID 3341630" in str(error.value)
+    assert "3150 MiB" in str(error.value)
+
+
+def test_parakeet_accepts_idle_cuda(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        speech_to_text.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(stdout=""),
+    )
+
+    speech_to_text.require_exclusive_cuda()
 
 
 def test_parakeet_runtime_removes_conflicting_library_environment(
