@@ -53,7 +53,8 @@ fi
 # Cleanup temp files (yt-dlp may leave some with -k flag)
 if ! $audio_only; then
     mv combined.mp4 _combined.mp4 2>/dev/null || true
-    rm -f combined*.mp4 combined*.webm combined*.mkv 2>/dev/null
+    temp_files=(combined*.mp4(N) combined*.webm(N) combined*.mkv(N))
+    (( ${#temp_files} )) && rm -f -- "${temp_files[@]}"
     mv _combined.mp4 combined.mp4 2>/dev/null || true
 fi
 
