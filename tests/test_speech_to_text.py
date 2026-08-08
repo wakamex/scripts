@@ -140,6 +140,43 @@ def test_local_whisper_rejects_speaker_diarization(
     assert "--speakers is not supported" in capsys.readouterr().err
 
 
+def test_gpt_transcribe_request_uses_model_and_language_hint(tmp_path: Path) -> None:
+    audio = tmp_path / "audio.mp3"
+    audio.write_bytes(b"audio")
+    captured = {}
+
+    class Transcriptions:
+        @staticmethod
+        def create(**kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(text="Transcript")
+
+    client = SimpleNamespace(audio=SimpleNamespace(transcriptions=Transcriptions()))
+
+    result = speech_to_text.request_gpt_transcription(client, str(audio), "en", "Prior text")
+
+    assert result.text == "Transcript"
+    assert captured["model"] == "gpt-transcribe"
+    assert captured["prompt"] == "Prior text"
+    assert captured["extra_body"] == {"languages": ["en"]}
+
+
+def test_gpt_transcribe_rejects_timestamps(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["speech_to_text.py", "audio.wav", "--engine", "gpt-transcribe", "--timestamps"],
+    )
+
+    with pytest.raises(SystemExit, match="2"):
+        speech_to_text.main()
+
+    assert "--timestamps is not supported" in capsys.readouterr().err
+
+
 @pytest.mark.parametrize(
     ("extra_args", "message"),
     [

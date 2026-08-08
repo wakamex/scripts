@@ -35,6 +35,8 @@ LOCAL_WHISPER_MODEL = "openai/whisper-large-v3"
 LOCAL_WHISPER_CHUNK_SECONDS = 20
 LOCAL_WHISPER_BATCH_SIZE = 8
 LOCAL_WHISPER_MAX_NEW_TOKENS = 256
+GPT_TRANSCRIBE_MODEL = "gpt-transcribe"
+GPT_TRANSCRIBE_CHUNK_SECONDS = 600
 
 
 def format_timestamp(seconds: float):
@@ -226,6 +228,52 @@ def transcribe_whisper(audio_path: str, language: str, timestamps: bool):
             lines.append(f"[{format_timestamp(seg['start'])} -> {format_timestamp(seg['end'])}] {seg['text']}")
         else:
             lines.append(seg["text"])
+    return lines
+
+
+def request_gpt_transcription(client, audio_path: str, language: str, prompt: str | None):
+    with open(audio_path, "rb") as audio_file:
+        return client.audio.transcriptions.create(
+            model=GPT_TRANSCRIBE_MODEL,
+            file=audio_file,
+            prompt=prompt,
+            extra_body={"languages": [language]},
+        )
+
+
+def transcribe_gpt(audio_path: str, language: str):
+    from openai import OpenAI
+
+    client = OpenAI()
+    duration = get_duration(audio_path)
+    num_chunks = max(
+        chunk_count_for(audio_path),
+        math.ceil(duration / GPT_TRANSCRIBE_CHUNK_SECONDS),
+    )
+
+    if num_chunks == 1:
+        print(f"Transcribing with {GPT_TRANSCRIBE_MODEL}: {audio_path}")
+        result = request_gpt_transcription(client, audio_path, language, None)
+        return [result.text.strip()]
+
+    print(
+        f"Transcribing with {GPT_TRANSCRIBE_MODEL} in {num_chunks} "
+        f"audio-only chunks of at most {GPT_TRANSCRIBE_CHUNK_SECONDS}s..."
+    )
+    chunks = split_audio(audio_path, num_chunks)
+    lines = []
+    prior = ""
+    try:
+        for index, (chunk_path, _) in enumerate(chunks):
+            print(f"Transcribing chunk {index + 1}/{len(chunks)}...")
+            prompt = f"The previous chunk ended: {prior[-800:]}" if prior else None
+            result = request_gpt_transcription(client, chunk_path, language, prompt)
+            text = result.text.strip()
+            if text:
+                lines.append(text)
+                prior = text
+    finally:
+        cleanup_chunks(chunks)
     return lines
 
 
@@ -486,9 +534,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-l", "--language", default="en", help="Language code (default: en)")
     parser.add_argument(
         "--engine",
-        choices=("whisper", "whisper-large-v3", "parakeet"),
+        choices=("whisper", "gpt-transcribe", "whisper-large-v3", "parakeet"),
         default="whisper",
-        help="Engine: remote Whisper API, local Whisper Large v3, or local Parakeet",
+        help=(
+            "Engine: remote whisper-1, remote gpt-transcribe, local Whisper Large v3, "
+            "or local Parakeet"
+        ),
     )
     parser.add_argument("--speakers", action="store_true", help="Enable speaker diarization (uses AssemblyAI)")
     parser.add_argument("--timestamps", action="store_true", help="Include timestamps")
@@ -503,6 +554,8 @@ def main():
 
     if args.engine != "whisper" and args.speakers:
         parser.error(f"--speakers is not supported with --engine {args.engine}")
+    if args.engine == "gpt-transcribe" and args.timestamps:
+        parser.error("--timestamps is not supported with --engine gpt-transcribe")
     if args.engine == "parakeet" and args.language != "en":
         parser.error("Parakeet TDT 0.6B v3 supports English only; use --language en")
 
@@ -518,6 +571,8 @@ def main():
         restart_with_local_whisper_runtime()
     if args.engine == "parakeet":
         lines = transcribe_parakeet(args.audio_file, args.timestamps)
+    elif args.engine == "gpt-transcribe":
+        lines = transcribe_gpt(args.audio_file, args.language)
     elif args.engine == "whisper-large-v3":
         lines = transcribe_local_whisper(args.audio_file, args.language, args.timestamps)
     elif args.speakers:
