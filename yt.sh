@@ -1,61 +1,141 @@
-#!/bin/zsh
-# Download video or audio from YouTube and other sites
-# Usage:
-#   yt.sh URL                    # video
-#   yt.sh -a URL                 # audio only (mp3)
-#   yt.sh URL START END          # video, cut from START to END seconds
-#   yt.sh -a URL START END       # audio, cut from START to END seconds
-# Example: ./yt.sh "https://www.youtube.com/watch?v=xyz" $((4*60+52)) $((4*60+55))
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Check for audio flag
-audio_only=false
-if [[ "$1" == "-a" ]]; then
-    audio_only=true
-    shift
-fi
+readonly YT_DLP_VERSION="2026.7.4"
 
-url="$1"
-start_time="$2"
-end_time="$3"
+usage() {
+    cat <<'EOF'
+Usage: yt.sh [-a] [-o OUTPUT] URL [START_SECONDS [END_SECONDS]]
 
-if [[ -z "$url" ]]; then
-    echo "Usage: yt.sh [-a] URL [START_SECONDS] [END_SECONDS]"
+  -a, --audio-only  Download audio and convert it to MP3.
+  -o, --output PATH Publish to PATH instead of output.mp3 or combined.mp4.
+  -h, --help        Show this help.
+
+Examples:
+  yt.sh -a -o interview.mp3 'https://www.youtube.com/watch?v=VIDEO_ID'
+  yt.sh -o clip.mp4 'https://www.youtube.com/watch?v=VIDEO_ID' 292 295
+EOF
+}
+
+fail() {
+    printf 'error: %s\n' "$*" >&2
     exit 1
+}
+
+require_command() {
+    command -v "$1" >/dev/null 2>&1 || fail "$1 is required"
+}
+
+audio_only=false
+output=""
+
+while (( $# )); do
+    case "$1" in
+        -a|--audio-only)
+            audio_only=true
+            shift
+            ;;
+        -o|--output)
+            (( $# >= 2 )) || fail "$1 requires a path"
+            output=$2
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            fail "unknown option: $1"
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+(( $# >= 1 && $# <= 3 )) || {
+    usage >&2
+    exit 1
+}
+
+url=$1
+start_time=${2:-}
+end_time=${3:-}
+
+if [[ -n "$end_time" && -z "$start_time" ]]; then
+    fail "END_SECONDS requires START_SECONDS"
 fi
 
 if $audio_only; then
-    # Audio only: best audio, convert to mp3
-    yt-dlp --progress -i --remote-components ejs:github \
-        -f 'ba/b' -x --audio-format mp3 \
-        -o "output.mp3" "$url"
-    output="output.mp3"
+    output=${output:-output.mp3}
+    [[ "${output,,}" == *.mp3 ]] || fail "audio output must end in .mp3"
+    expected_stream=audio
 else
-    # Video + audio: try combined, then separate streams, then best available
-    yt-dlp --progress -i --remote-components ejs:github \
-        -f 'b/bv*+ba/b' -k --no-embed-metadata \
-        --merge-output-format mp4 \
-        -o "combined.mp4" "$url"
-    output="combined.mp4"
+    output=${output:-combined.mp4}
+    [[ "${output,,}" == *.mp4 ]] || fail "video output must end in .mp4"
+    expected_stream=video
 fi
 
-# Cut if start time provided
+require_command uvx
+require_command ffmpeg
+require_command ffprobe
+
+output_name=$(basename -- "$output")
+output_parent=$(dirname -- "$output")
+[[ "$output_name" != "." && "$output_name" != "/" ]] || fail "output path is invalid"
+mkdir -p -- "$output_parent"
+output_parent=$(cd -- "$output_parent" && pwd -P)
+destination="$output_parent/$output_name"
+stage_directory=$(mktemp -d "$output_parent/.yt-download.XXXXXX")
+
+cleanup() {
+    rm -rf -- "$stage_directory"
+}
+trap cleanup EXIT
+
+template="$stage_directory/download.%(ext)s"
+yt_dlp=(
+    uvx --from "yt-dlp==$YT_DLP_VERSION" yt-dlp
+    --no-playlist
+    --progress
+    --output "$template"
+)
+
+if $audio_only; then
+    "${yt_dlp[@]}" --format 'ba/b' --extract-audio --audio-format mp3 "$url"
+    downloaded="$stage_directory/download.mp3"
+else
+    "${yt_dlp[@]}" --format 'bv*+ba/b' --merge-output-format mp4 --remux-video mp4 "$url"
+    downloaded="$stage_directory/download.mp4"
+fi
+
+[[ -f "$downloaded" ]] || fail "yt-dlp did not produce the expected $expected_stream file"
+
 if [[ -n "$start_time" ]]; then
-    timeargs=("-ss" "$start_time")
-    [[ -n "$end_time" ]] && timeargs+=("-to" "$end_time")
-
-    ext="${output##*.}"
-    cut_output="${output%.*}_cut.${ext}"
-
-    ffmpeg -y -hide_banner "${timeargs[@]}" -i "$output" "$cut_output"
-    mv "$cut_output" "$output"
+    clipped="$stage_directory/clipped.${downloaded##*.}"
+    ffmpeg_args=(-y -hide_banner -loglevel error -ss "$start_time")
+    [[ -z "$end_time" ]] || ffmpeg_args+=(-to "$end_time")
+    ffmpeg "${ffmpeg_args[@]}" -i "$downloaded" "$clipped"
+    downloaded=$clipped
 fi
 
-# Cleanup temp files (yt-dlp may leave some with -k flag)
-if ! $audio_only; then
-    mv combined.mp4 _combined.mp4 2>/dev/null || true
-    temp_files=(combined*.mp4(N) combined*.webm(N) combined*.mkv(N))
-    (( ${#temp_files} )) && rm -f -- "${temp_files[@]}"
-    mv _combined.mp4 combined.mp4 2>/dev/null || true
-fi
+duration=$(ffprobe -v error -show_entries format=duration -of default=nk=1:nw=1 "$downloaded")
+awk -v duration="$duration" 'BEGIN { exit !(duration > 0) }' \
+    || fail "download has no measurable duration"
 
-echo "Done: $output"
+stream=$(
+    ffprobe -v error -select_streams "${expected_stream:0:1}:0" \
+        -show_entries stream=codec_type -of default=nk=1:nw=1 "$downloaded"
+)
+[[ "$stream" == "$expected_stream" ]] || fail "download has no $expected_stream stream"
+
+chmod 0600 "$downloaded"
+mv -f -- "$downloaded" "$destination"
+trap - EXIT
+cleanup
+
+printf 'Done: %s\n' "$destination"
