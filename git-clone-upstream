@@ -1,0 +1,391 @@
+#!/usr/bin/env python3
+
+import json
+import subprocess
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+
+# git-clone options whose value may be supplied as the next argument.
+VALUE_OPTIONS = {
+    "-o",
+    "--origin",
+    "-b",
+    "--branch",
+    "-u",
+    "--upload-pack",
+    "-c",
+    "--config",
+    "-j",
+    "--jobs",
+    "--template",
+    "--reference",
+    "--reference-if-able",
+    "--separate-git-dir",
+    "--depth",
+    "--shallow-since",
+    "--shallow-exclude",
+    "--server-option",
+    "--filter",
+    "--bundle-uri",
+    "--revision",
+    "--ref-format",
+}
+
+
+def git(*args, cwd=None, check=True):
+    return subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        check=check,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+def clone_positionals(args):
+    """Return git clone's repository and optional directory arguments."""
+    positionals = []
+    i = 0
+    end_options = False
+
+    while i < len(args):
+        arg = args[i]
+
+        if end_options:
+            positionals.append(arg)
+            i += 1
+            continue
+
+        if arg == "--":
+            end_options = True
+            i += 1
+            continue
+
+        # --option=value
+        if arg.startswith("--") and "=" in arg:
+            i += 1
+            continue
+
+        if arg in VALUE_OPTIONS:
+            i += 2
+            continue
+
+        # Short options with attached values:
+        # -bmain, -ofoo, -j8, -cfoo.bar=baz, -u/path
+        if (
+            len(arg) > 2
+            and arg.startswith("-")
+            and not arg.startswith("--")
+            and arg[1] in "obucj"
+        ):
+            i += 1
+            continue
+
+        if arg.startswith("-"):
+            i += 1
+            continue
+
+        positionals.append(arg)
+        i += 1
+
+    if not positionals:
+        return None, None
+
+    repo = positionals[0]
+    directory = positionals[1] if len(positionals) > 1 else None
+    return repo, directory
+
+
+def default_clone_directory(repo):
+    """
+    Approximate Git's 'humanish' destination-name rule for normal
+    network repository URLs.
+    """
+    value = repo.rstrip("/")
+
+    # scp-style SSH: git@example.com:owner/repo.git
+    if ":" in value and "://" not in value:
+        value = value.rsplit(":", 1)[1]
+
+    else:
+        parsed = urllib.parse.urlparse(value)
+        if parsed.scheme:
+            value = parsed.path
+
+    name = value.rstrip("/").rsplit("/", 1)[-1]
+
+    if name.endswith(".git"):
+        name = name[:-4]
+
+    return name
+
+
+def find_cloned_repo(repo_arg, directory):
+    if directory:
+        candidate = Path(directory)
+    else:
+        candidate = Path(default_clone_directory(repo_arg))
+
+    if candidate.exists():
+        try:
+            git("-C", str(candidate), "rev-parse", "--git-dir")
+            return candidate
+        except subprocess.CalledProcessError:
+            pass
+
+    return None
+
+
+def get_remote(repo_dir):
+    result = git("-C", str(repo_dir), "remote")
+    remotes = [x for x in result.stdout.splitlines() if x]
+
+    if not remotes:
+        return None, None
+
+    # Normally there's exactly one immediately after clone. This also
+    # handles `git clone --origin whatever`.
+    remote = remotes[0]
+
+    result = git(
+        "-C",
+        str(repo_dir),
+        "remote",
+        "get-url",
+        remote,
+    )
+
+    return remote, result.stdout.strip()
+
+
+def parse_remote(url):
+    """
+    Return (host, path, transport).
+
+    Supports:
+      https://host/owner/repo.git
+      http://host/owner/repo.git
+      ssh://git@host/owner/repo.git
+      git@host:owner/repo.git
+    """
+    if "://" in url:
+        parsed = urllib.parse.urlparse(url)
+
+        if parsed.scheme not in {"http", "https", "ssh"}:
+            return None
+
+        host = parsed.hostname
+        path = parsed.path.lstrip("/")
+        transport = "ssh" if parsed.scheme == "ssh" else parsed.scheme
+
+    elif ":" in url and "@" in url.split(":", 1)[0]:
+        lhs, path = url.split(":", 1)
+        host = lhs.rsplit("@", 1)[1]
+        transport = "ssh"
+
+    else:
+        return None
+
+    path = path.rstrip("/")
+
+    if path.endswith(".git"):
+        path = path[:-4]
+
+    if not host or not path:
+        return None
+
+    return host.lower(), path, transport
+
+
+def request_json(url, headers=None, timeout=3):
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "git-clone-upstream",
+            **(headers or {}),
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            content_type = response.headers.get_content_type()
+
+            if content_type != "application/json":
+                return None
+
+            return json.load(response)
+
+    except (
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        TimeoutError,
+        json.JSONDecodeError,
+    ):
+        return None
+
+
+def github_parent(host, path, transport):
+    if host != "github.com":
+        return None
+
+    data = request_json(
+        f"https://api.github.com/repos/{path}",
+        headers={"Accept": "application/vnd.github+json"},
+    )
+
+    if not data:
+        return None
+
+    parent = data.get("parent")
+
+    if not parent:
+        return None
+
+    if transport == "ssh":
+        return parent.get("ssh_url")
+
+    return parent.get("clone_url")
+
+
+def gitlab_parent(host, path, transport):
+    encoded = urllib.parse.quote(path, safe="")
+
+    data = request_json(
+        f"https://{host}/api/v4/projects/{encoded}"
+    )
+
+    if not data or "forked_from_project" not in data:
+        return None
+
+    parent = data.get("forked_from_project")
+
+    if not parent:
+        return None
+
+    if transport == "ssh":
+        return parent.get("ssh_url_to_repo")
+
+    return parent.get("http_url_to_repo")
+
+
+def forgejo_parent(host, path, transport):
+    # Forgejo/Gitea repository paths are owner/repository.
+    parts = path.split("/")
+
+    if len(parts) != 2:
+        return None
+
+    owner = urllib.parse.quote(parts[0], safe="")
+    repo = urllib.parse.quote(parts[1], safe="")
+
+    data = request_json(
+        f"https://{host}/api/v1/repos/{owner}/{repo}"
+    )
+
+    if not data:
+        return None
+
+    parent = data.get("parent")
+
+    if not parent:
+        return None
+
+    if transport == "ssh":
+        return parent.get("ssh_url")
+
+    return parent.get("clone_url")
+
+
+def find_parent(host, path, transport):
+    if host == "github.com":
+        return github_parent(host, path, transport)
+
+    if host == "gitlab.com":
+        return gitlab_parent(host, path, transport)
+
+    if host in {"codeberg.org", "gitea.com"}:
+        return forgejo_parent(host, path, transport)
+
+    # Unknown/self-hosted forge:
+    #
+    # Try GitLab, then Forgejo/Gitea. A failed API probe is harmless.
+    parent = gitlab_parent(host, path, transport)
+
+    if parent:
+        return parent
+
+    return forgejo_parent(host, path, transport)
+
+
+def main():
+    args = sys.argv[1:]
+
+    if not args:
+        # Preserve normal git behavior/error output.
+        return subprocess.call(["git", "clone"])
+
+    repo_arg, directory = clone_positionals(args)
+
+    # Git gets the arguments exactly as supplied by the user.
+    result = subprocess.run(["git", "clone", *args])
+
+    if result.returncode != 0:
+        return result.returncode
+
+    if not repo_arg:
+        return 0
+
+    repo_dir = find_cloned_repo(repo_arg, directory)
+
+    if not repo_dir:
+        return 0
+
+    remote_name, origin_url = get_remote(repo_dir)
+
+    if not origin_url:
+        return 0
+
+    parsed = parse_remote(origin_url)
+
+    if not parsed:
+        return 0
+
+    host, path, transport = parsed
+    parent = find_parent(host, path, transport)
+
+    if not parent:
+        return 0
+
+    # Don't overwrite an explicitly existing upstream remote.
+    remotes = git("-C", str(repo_dir), "remote").stdout.splitlines()
+
+    if "upstream" in remotes:
+        print("upstream already exists; leaving it unchanged")
+        return 0
+
+    try:
+        git(
+            "-C",
+            str(repo_dir),
+            "remote",
+            "add",
+            "upstream",
+            parent,
+        )
+    except subprocess.CalledProcessError as e:
+        if e.stderr:
+            print(e.stderr.rstrip(), file=sys.stderr)
+        return e.returncode
+
+    print(f"Added upstream -> {parent}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
