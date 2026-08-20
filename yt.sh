@@ -122,7 +122,10 @@ yt_dlp=(
 )
 
 if $audio_only; then
-    "${yt_dlp[@]}" --format 'ba/b' --extract-audio --audio-format mp3 "$url"
+    # Some YouTube livestream archives expose a higher-ranked Opus track that is
+    # silent while the AAC/M4A track contains the program audio. Prefer M4A and
+    # retain the generic best-audio fallback for videos without one.
+    "${yt_dlp[@]}" --format 'ba[ext=m4a]/ba/b' --extract-audio --audio-format mp3 "$url"
     downloaded="$stage_directory/download.mp3"
 else
     format_selector='bv*+ba/b'
