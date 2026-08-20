@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly YT_DLP_VERSION="2026.7.4"
+readonly YT_DLP_VERSION="2026.8.19"
 
 usage() {
     cat <<'EOF'
-Usage: yt.sh [-a] [-o OUTPUT] URL [START_SECONDS [END_SECONDS]]
+Usage: yt.sh [-a] [--yt-dlp-order] [-o OUTPUT] URL [START_SECONDS [END_SECONDS]]
 
   -a, --audio-only  Download audio and convert it to MP3.
+  --yt-dlp-order     Use yt-dlp's built-in video ordering instead of the
+                     default codec-adjusted bitrate selection up to 1080p.
   -o, --output PATH Publish to PATH instead of output.mp3 or combined.mp4.
   -h, --help        Show this help.
 
 Examples:
   yt.sh -a -o interview.mp3 'https://www.youtube.com/watch?v=VIDEO_ID'
+  yt.sh 'https://www.youtube.com/watch?v=VIDEO_ID'
+  yt.sh --yt-dlp-order 'https://www.youtube.com/watch?v=VIDEO_ID'
   yt.sh -o clip.mp4 'https://www.youtube.com/watch?v=VIDEO_ID' 292 295
 EOF
 }
@@ -27,12 +31,21 @@ require_command() {
 }
 
 audio_only=false
+quality_score=true
 output=""
 
 while (( $# )); do
     case "$1" in
         -a|--audio-only)
             audio_only=true
+            shift
+            ;;
+        -q|--quality-score)
+            quality_score=true
+            shift
+            ;;
+        --yt-dlp-order)
+            quality_score=false
             shift
             ;;
         -o|--output)
@@ -83,6 +96,9 @@ fi
 require_command uvx
 require_command ffmpeg
 require_command ffprobe
+if ! $audio_only && $quality_score; then
+    require_command python3
+fi
 
 output_name=$(basename -- "$output")
 output_parent=$(dirname -- "$output")
@@ -99,7 +115,7 @@ trap cleanup EXIT
 
 template="$stage_directory/download.%(ext)s"
 yt_dlp=(
-    uvx --from "yt-dlp==$YT_DLP_VERSION" yt-dlp
+    uvx --no-config --from "yt-dlp==$YT_DLP_VERSION" yt-dlp
     --no-playlist
     --progress
     --output "$template"
@@ -109,7 +125,12 @@ if $audio_only; then
     "${yt_dlp[@]}" --format 'ba/b' --extract-audio --audio-format mp3 "$url"
     downloaded="$stage_directory/download.mp3"
 else
-    "${yt_dlp[@]}" --format 'bv*+ba/b' --merge-output-format mp4 --remux-video mp4 "$url"
+    format_selector='bv*+ba/b'
+    if $quality_score; then
+        script_directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+        format_selector=$(python3 "$script_directory/yt_quality.py" --format-only "$url")
+    fi
+    "${yt_dlp[@]}" --format "$format_selector" --merge-output-format mp4 --remux-video mp4 "$url"
     downloaded="$stage_directory/download.mp4"
 fi
 
