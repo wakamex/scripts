@@ -1,0 +1,123 @@
+#!/usr/bin/env -S uv run --script
+#
+# /// script
+# requires-python = ">=3.10"
+# dependencies = []
+# ///
+
+"""List the disk usage of immediate subdirectories, smallest first."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+BYTES_PER_UNIT = 1024
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="List immediate subdirectories by allocated disk usage, smallest first.",
+    )
+    parser.add_argument("path", nargs="?", type=Path, default=Path.cwd())
+    parser.add_argument(
+        "--limit-filesystem",
+        action="store_true",
+        help="omit entries on filesystems other than the supplied path's filesystem",
+    )
+    return parser.parse_args(argv)
+
+
+def immediate_subdirectories(path: Path) -> list[Path]:
+    path = path.expanduser().resolve(strict=True)
+    if not path.is_dir():
+        raise NotADirectoryError(path)
+
+    return [Path(entry.path) for entry in os.scandir(path) if entry.is_dir(follow_symlinks=False)]
+
+
+def disk_usage(root: Path, directories: list[Path], *, limit_filesystem: bool) -> list[tuple[int, Path]]:
+    """Measure candidate directories with one dust traversal.
+
+    Add explicit mount-point detection only if an actual scanned tree contains a
+    same-filesystem bind mount that --limit-filesystem fails to exclude.
+    """
+    if not directories:
+        return []
+
+    dust = shutil.which("dust")
+    if dust is None:
+        raise RuntimeError("dust is required")
+
+    command = [
+        dust,
+        "--no-progress",
+        "--output-json",
+        "--output-format",
+        "b",
+        "--depth",
+        "1",
+        "--only-dir",
+        "--number-of-lines",
+        str(sum(1 for _ in os.scandir(root)) + 1),
+    ]
+    if limit_filesystem:
+        command.append("--limit-filesystem")
+    command.append(os.fspath(root))
+
+    result = subprocess.run(
+        command,
+        check=True,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+
+    candidates = {directory.resolve() for directory in directories}
+    tree = json.loads(result.stdout)
+    sizes = [
+        (int(child["size"].removesuffix("B")), Path(child["name"]))
+        for child in tree["children"]
+        if Path(child["name"]).resolve() in candidates
+    ]
+    return sorted(sizes, key=lambda item: (item[0], item[1].name))
+
+
+def format_size(size: int) -> str:
+    value = float(size)
+    units = ("B", "KiB", "MiB", "GiB", "TiB", "PiB")
+    for unit in units:
+        if value < BYTES_PER_UNIT or unit == units[-1]:
+            if unit == "B":
+                return f"{int(value)} {unit}"
+            return f"{value:.1f} {unit}"
+        value /= BYTES_PER_UNIT
+    raise AssertionError("unreachable")
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    try:
+        root = args.path.expanduser().resolve(strict=True)
+        directories = immediate_subdirectories(root)
+        sizes = disk_usage(root, directories, limit_filesystem=args.limit_filesystem)
+    except (FileNotFoundError, NotADirectoryError, RuntimeError, subprocess.CalledProcessError) as error:
+        print(f"subdir-sizes: {error}", file=sys.stderr)
+        return 1
+
+    if not sizes:
+        return 0
+
+    formatted = [(format_size(size), path.name) for size, path in sizes]
+    width = max(len(size) for size, _ in formatted)
+    for size, name in formatted:
+        print(f"{size:>{width}}  {name}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
