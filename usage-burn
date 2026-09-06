@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Print current Claude, Codex, and Antigravity quota burn rates."""
+"""Print current Claude, Codex, Antigravity, and Z.ai quota burn rates."""
 
 import argparse
 import json
 import math
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,6 +14,7 @@ CACHES = {
     "claude": Path.home() / ".claude" / "usage-limits.json",
     "codex": Path.home() / ".codex" / "usage-limits.json",
     "agy": Path.home() / ".gemini" / "antigravity-cli" / "usage-limits.json",
+    "zcode": Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "zcode-cli-usage" / "usage.json",
 }
 
 CLAUDE_META_KEYS = {
@@ -296,6 +298,24 @@ def agy_period_hours(bucket: dict) -> float | None:
     )
 
 
+def agy_label(group_name: str, bucket: dict, hours: float | None) -> str:
+    family = re.sub(r"\s+models$", "", group_name, flags=re.IGNORECASE)
+    frequency = None
+    if hours is not None:
+        for expected, name in ((5, "5h"), (24, "daily"), (168, "weekly")):
+            if abs(hours - expected) / expected <= 0.1:
+                frequency = name
+                break
+    if frequency is None:
+        frequency = str(bucket.get("window") or "").strip().lower() or None
+    if frequency is None:
+        display_name = str(bucket.get("display_name") or "").strip()
+        frequency = re.sub(
+            r"\s+limit(?:\s+remaining)?$", "", display_name, flags=re.IGNORECASE
+        ).lower() or "quota"
+    return f"{family} ({frequency})"
+
+
 def print_agy(data: dict, weekly_only: bool = False, main_only: bool = False):
     summary = data.get("quota_summary")
     if not isinstance(summary, dict):
@@ -315,7 +335,7 @@ def print_agy(data: dict, weekly_only: bool = False, main_only: bool = False):
             hours = agy_period_hours(bucket)
             if remaining_pct is None:
                 continue
-            label = f"{group_name} · {bucket.get('display_name') or 'Quota'}"
+            label = agy_label(group_name, bucket, hours)
             print_row(
                 "agy",
                 label,
@@ -324,6 +344,23 @@ def print_agy(data: dict, weekly_only: bool = False, main_only: bool = False):
                 hours,
                 weekly_only,
             )
+
+
+def print_zcode(data: dict, weekly_only: bool = False):
+    for bucket in data.get("limits") or []:
+        if not isinstance(bucket, dict) or bucket.get("pct") is None:
+            continue
+        count = bucket.get("number")
+        unit_hours = {3: 1, 6: 168}.get(bucket.get("unit"))
+        hours = None
+        if unit_hours and isinstance(count, int | float) and not isinstance(count, bool) and count > 0:
+            hours = count * unit_hours
+        label = codex_window_label("quota", hours)
+        if bucket.get("type") == "CREDIT_LIMIT":
+            label += " (credits)"
+        else:
+            label += f" ({bucket.get('type') or 'unknown'})"
+        print_row("zcode", label, float(bucket["pct"]), bucket.get("resets_at"), hours, weekly_only)
 
 
 def main():
@@ -343,6 +380,10 @@ def main():
     agy = load_cache("agy")
     if agy:
         print_agy(agy, weekly_only=args.weekly, main_only=args.main)
+
+    zcode = load_cache("zcode")
+    if zcode:
+        print_zcode(zcode, weekly_only=args.weekly)
 
 
 if __name__ == "__main__":

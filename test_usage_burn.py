@@ -12,6 +12,7 @@ print_agy = USAGE_BURN["print_agy"]
 print_claude = USAGE_BURN["print_claude"]
 codex_windows = USAGE_BURN["codex_windows"]
 print_codex = USAGE_BURN["print_codex"]
+print_zcode = USAGE_BURN["print_zcode"]
 
 
 def render_codex(data: dict, weekly_only: bool = False) -> str:
@@ -88,6 +89,44 @@ class CodexUsageTests(unittest.TestCase):
         self.assertEqual(output.count("codex"), 1)
 
 
+class ZcodeUsageTests(unittest.TestCase):
+    # Normalized fields from the live zcode-cli-usage cache.
+    data = {"limits": [
+        {"type": "CREDIT_LIMIT", "unit": 3, "number": 5,
+         "pct": 0, "resets_at": None},
+        {"type": "CREDIT_LIMIT", "unit": 6, "number": 1,
+         "pct": 1, "resets_at": "2026-09-11T03:38:39.995000+00:00"},
+    ]}
+
+    def test_prints_both_credit_windows(self):
+        output = StringIO()
+        with redirect_stdout(output):
+            print_zcode(self.data)
+        rendered = output.getvalue()
+        self.assertIn("Session (5h) (credits)", rendered)
+        self.assertIn("Week (7d) (credits)", rendered)
+        self.assertIn("1.0% used", rendered)
+        self.assertEqual(rendered.count("zcode"), 2)
+
+    def test_weekly_filter_excludes_short_window(self):
+        output = StringIO()
+        with redirect_stdout(output):
+            print_zcode(self.data, weekly_only=True)
+        self.assertNotIn("Session", output.getvalue())
+        self.assertIn("Week (7d)", output.getvalue())
+        self.assertEqual(output.getvalue().count("zcode"), 1)
+
+    def test_unknown_unit_does_not_assume_a_period(self):
+        output = StringIO()
+        with redirect_stdout(output):
+            print_zcode({"limits": [{
+                "type": "CREDIT_LIMIT", "unit": 99, "number": 1,
+                "pct": 5, "resets_at": None,
+            }]})
+        self.assertIn("Quota (credits)", output.getvalue())
+        self.assertIn("burn     -", output.getvalue())
+
+
 class GenericDurationTests(unittest.TestCase):
     def test_duration_hours_parses_machine_and_display_values(self):
         cases = {
@@ -137,8 +176,8 @@ class GenericDurationTests(unittest.TestCase):
             print_agy(data)
 
         rendered = output.getvalue()
-        self.assertIn("Daily Limit", rendered)
-        self.assertIn("Flexible Limit", rendered)
+        self.assertIn("Gemini (daily)", rendered)
+        self.assertIn("Gemini (flexible)", rendered)
         self.assertIn("burn     -", rendered)
 
     def test_print_claude_keeps_semantic_session_without_guessing_period(self):
