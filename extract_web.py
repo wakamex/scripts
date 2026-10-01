@@ -26,6 +26,7 @@ from urllib.parse import urljoin, urlparse
 import html2text
 import requests
 from lxml import html as lxml_html
+from lxml.etree import XPathError
 from readability import Document
 
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
@@ -129,7 +130,7 @@ def first_xpath(tree: object, expressions: Sequence[str]) -> str | None:
     return None
 
 
-def render_markdown(page: FetchedPage, min_chars: int = 200) -> str:
+def render_markdown(page: FetchedPage, min_chars: int = 200, content_xpath: str | None = None) -> str:
     tree = lxml_html.fromstring(page.html)
     canonical = first_xpath(
         tree,
@@ -151,7 +152,8 @@ def render_markdown(page: FetchedPage, min_chars: int = 200) -> str:
         ),
     )
 
-    for element in tree.xpath("//nav|//header|//footer|//aside|//script|//style|//noscript"):
+    removable = "//nav|//footer|//script|//style|//noscript" if content_xpath else "//nav|//header|//footer|//aside|//script|//style|//noscript"
+    for element in tree.xpath(removable):
         parent = element.getparent()
         if parent is not None:
             parent.remove(element)
@@ -163,7 +165,17 @@ def render_markdown(page: FetchedPage, min_chars: int = 200) -> str:
     converter.body_width = 0
     converter.ignore_images = False
     converter.ignore_links = False
-    body = converter.handle(document.summary(html_partial=True)).strip()
+    if content_xpath:
+        try:
+            selected = tree.xpath(content_xpath)
+        except XPathError as error:
+            raise ValueError("invalid content XPath") from error
+        if len(selected) != 1 or not isinstance(selected[0], lxml_html.HtmlElement):
+            raise ValueError("content XPath must select exactly one HTML element")
+        content = lxml_html.tostring(selected[0], encoding="unicode")
+    else:
+        content = document.summary(html_partial=True)
+    body = converter.handle(content).strip()
     visible = re.sub(r"\s+", " ", re.sub(r"[#*_>`\[\]()]", "", body)).strip()
     if len(visible) < min_chars:
         raise RuntimeError(f"main-content extraction returned only {len(visible)} visible characters")
@@ -211,6 +223,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--min-chars", type=int, default=200)
+    parser.add_argument("--content-xpath", help="explicit content element when automatic article extraction omits relevant content")
     return parser.parse_args(argv)
 
 
@@ -223,7 +236,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.browser
             else fetch_direct(args.url, args.timeout)
         )
-        markdown = render_markdown(page, min_chars=args.min_chars)
+        markdown = render_markdown(page, min_chars=args.min_chars, content_xpath=args.content_xpath)
         if args.output:
             atomic_write(args.output.resolve(), markdown)
             print(f"published {args.output.resolve()}", file=sys.stderr)
