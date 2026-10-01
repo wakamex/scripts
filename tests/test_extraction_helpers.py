@@ -90,6 +90,106 @@ def test_web_rejects_challenge_page() -> None:
         extract_web.validate_page(page)
 
 
+class FakeResponse:
+    def __init__(self, url: str, text: str, content_type: str, status: int = 200) -> None:
+        self.url, self.text, self.status_code = url, text, status
+        self.headers = {"content-type": content_type}
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise extract_web.requests.HTTPError(f"HTTP {self.status_code}")
+
+
+def serve(monkeypatch: pytest.MonkeyPatch, pages: dict[str, tuple[str, str]]) -> list[str]:
+    requested: list[str] = []
+
+    def get(url: str, **_: object) -> FakeResponse:
+        requested.append(url)
+        if url not in pages:
+            return FakeResponse(url, "<html>Not found</html>", "text/html", 404)
+        text, content_type = pages[url]
+        return FakeResponse(url, text, content_type)
+
+    monkeypatch.setattr(extract_web.requests, "get", get)
+    return requested
+
+
+NATIVE = "# Pricing\n\n" + "| Model | Input | Output |\n" * 20
+ARTICLE = "<html><head><title>Pricing</title>{head}</head><body><article><p>{body}</p></article></body></html>"
+
+
+def test_web_uses_markdown_from_content_negotiation(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    requested = serve(monkeypatch, {"https://docs.example/pricing": (NATIVE, "text/markdown; charset=utf-8")})
+
+    assert extract_web.main(["https://docs.example/pricing"]) == 0
+
+    output = capsys.readouterr().out
+    assert output.endswith(NATIVE.strip() + "\n")
+    assert "- Markdown: [link](<https://docs.example/pricing>)" in output
+    assert requested == ["https://docs.example/pricing"]
+
+
+def test_web_follows_declared_markdown_alternate(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    head = '<link rel="alternate" type="text/markdown" href="/copies/pricing.md">'
+    serve(monkeypatch, {
+        "https://docs.example/pricing": (ARTICLE.format(head=head, body="HTML text " * 40), "text/html"),
+        "https://docs.example/copies/pricing.md": (NATIVE, "text/markdown"),
+    })
+
+    assert extract_web.main(["https://docs.example/pricing"]) == 0
+
+    output = capsys.readouterr().out
+    assert "- Source: [link](<https://docs.example/pricing>)" in output
+    assert "- Markdown: [link](<https://docs.example/copies/pricing.md>)" in output
+    assert "HTML text" not in output
+
+
+def test_web_tries_markdown_sibling_urls(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    requested = serve(monkeypatch, {
+        "https://docs.example/pricing/?tab=api": (ARTICLE.format(head="", body="HTML text " * 40), "text/html"),
+        "https://docs.example/pricing.md": ("<!doctype html><html>" + "x" * 300, "text/html"),
+        "https://docs.example/pricing.md.txt": (NATIVE, "text/markdown"),
+    })
+
+    assert extract_web.main(["https://docs.example/pricing/?tab=api"]) == 0
+
+    output = capsys.readouterr().out
+    assert "- Markdown: [link](<https://docs.example/pricing.md.txt>)" in output
+    assert requested == [
+        "https://docs.example/pricing/?tab=api",
+        "https://docs.example/pricing.md",
+        "https://docs.example/pricing.md.txt",
+    ]
+
+
+def test_web_falls_back_to_html_without_a_markdown_copy(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    body = "Substantive HTML paragraph. " * 20
+    serve(monkeypatch, {
+        "https://docs.example/pricing": (ARTICLE.format(head="", body=body), "text/html"),
+        "https://docs.example/pricing.md": ("Not found but plain " * 30, "text/plain"),
+    })
+
+    assert extract_web.main(["https://docs.example/pricing"]) == 0
+
+    output = capsys.readouterr().out
+    assert output.startswith("# Pricing\n")
+    assert body.strip() in output
+    assert "- Markdown:" not in output
+
+
+def test_web_html_flag_skips_markdown_copies(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    head = '<link rel="alternate" type="text/markdown" href="/pricing.md">'
+    requested = serve(monkeypatch, {
+        "https://docs.example/pricing": (ARTICLE.format(head=head, body="HTML text " * 40), "text/html"),
+        "https://docs.example/pricing.md": (NATIVE, "text/markdown"),
+    })
+
+    assert extract_web.main(["https://docs.example/pricing", "--html"]) == 0
+
+    assert "HTML text" in capsys.readouterr().out
+    assert requested == ["https://docs.example/pricing"]
+
+
 def reddit_payload() -> list[dict[str, object]]:
     return [
         {

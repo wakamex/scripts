@@ -8,7 +8,11 @@
 #   "requests>=2.32.4",
 # ]
 # ///
-"""Extract the main content of an HTTP(S) page as Markdown."""
+"""Extract the main content of an HTTP(S) page as Markdown.
+
+Pages that publish their own Markdown copy are returned as published: a Markdown
+response to content negotiation, a <link rel="alternate" type="text/markdown">, or a
+sibling URL ending in .md or .md.txt. Other pages are converted from HTML."""
 
 from __future__ import annotations
 
@@ -26,7 +30,7 @@ from urllib.parse import urljoin, urlparse
 import html2text
 import requests
 from lxml import html as lxml_html
-from lxml.etree import XPathError
+from lxml.etree import ParserError, XPathError
 from readability import Document
 
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
@@ -37,6 +41,9 @@ CHALLENGE_MARKERS = (
     "making sure you're not a bot",
     "attention required! | cloudflare",
 )
+MARKDOWN_TYPES = {"text/markdown", "text/x-markdown"}
+ACCEPT = "text/markdown, text/html;q=0.9, */*;q=0.8"
+MARKDOWN_SUFFIXES = (".md", ".md.txt")
 
 
 @dataclass(frozen=True)
@@ -65,8 +72,16 @@ def challenge_title(html: str) -> str | None:
     return None
 
 
+def media_type(content_type: str) -> str:
+    return content_type.partition(";")[0].strip().lower()
+
+
+def visible_chars(markdown: str) -> int:
+    return len(re.sub(r"\s+", " ", re.sub(r"[#*_>`\[\]()]", "", markdown)).strip())
+
+
 def validate_page(page: FetchedPage) -> None:
-    content_type = page.content_type.partition(";")[0].strip().lower()
+    content_type = media_type(page.content_type)
     if content_type not in {"text/html", "application/xhtml+xml"}:
         raise RuntimeError(f"expected HTML but received {page.content_type or 'no type'}")
     challenge = challenge_title(page.html)
@@ -74,21 +89,77 @@ def validate_page(page: FetchedPage) -> None:
         raise RuntimeError(f"received a challenge page: {challenge}")
 
 
-def fetch_direct(url: str, timeout: float) -> FetchedPage:
+def fetch(url: str, timeout: float) -> FetchedPage:
+    """Fetch a URL, preferring a Markdown representation when the server offers one."""
     response = requests.get(
         url,
-        headers={"User-Agent": USER_AGENT},
+        headers={"User-Agent": USER_AGENT, "Accept": ACCEPT},
         timeout=timeout,
         allow_redirects=True,
     )
     response.raise_for_status()
-    page = FetchedPage(
+    return FetchedPage(
         html=response.text,
         final_url=response.url,
         content_type=response.headers.get("content-type", ""),
     )
+
+
+def fetch_direct(url: str, timeout: float) -> FetchedPage:
+    page = fetch(url, timeout)
     validate_page(page)
     return page
+
+
+def is_native_markdown(page: FetchedPage, min_chars: int) -> bool:
+    """Accept only a declared Markdown response, never an HTML error page or stub."""
+    start = page.html.lstrip()[:100].lower()
+    return (
+        media_type(page.content_type) in MARKDOWN_TYPES
+        and not start.startswith(("<!doctype", "<html"))
+        and visible_chars(page.html) >= min_chars
+    )
+
+
+def markdown_candidates(page: FetchedPage) -> list[str]:
+    """Markdown copies an HTML page declares, then the conventional sibling URLs."""
+    candidates = []
+    if media_type(page.content_type) in {"text/html", "application/xhtml+xml"}:
+        try:
+            tree = lxml_html.fromstring(page.html)
+        except (ValueError, ParserError):
+            tree = None
+        if tree is not None:
+            for href in tree.xpath(
+                "//link[translate(@rel,'ALTERNATE','alternate')='alternate']"
+                "[translate(@type,'MARKDOWN','markdown')='text/markdown']/@href"
+            ):
+                candidates.append(urljoin(page.final_url, href))
+    parsed = urlparse(page.final_url)
+    path = parsed.path.rstrip("/")
+    if path and not path.endswith(MARKDOWN_SUFFIXES):
+        for suffix in MARKDOWN_SUFFIXES:
+            candidates.append(parsed._replace(path=path + suffix, query="", fragment="").geturl())
+    return list(dict.fromkeys(candidates))
+
+
+def fetch_native_markdown(page: FetchedPage, timeout: float, min_chars: int) -> FetchedPage | None:
+    """The page's own Markdown copy, if it publishes one."""
+    if is_native_markdown(page, min_chars):
+        return page
+    for candidate in markdown_candidates(page):
+        try:
+            copy = fetch(candidate, timeout)
+        except requests.RequestException:
+            continue
+        if is_native_markdown(copy, min_chars):
+            return copy
+    return None
+
+
+def native_document(source: str, copy: FetchedPage) -> str:
+    lines = [f"- Source: [link](<{source}>)", f"- Markdown: [link](<{copy.final_url}>)", ""]
+    return "\n".join(lines) + "\n" + copy.html.strip() + "\n"
 
 
 def fetch_browser(url: str, timeout: float, browser_name: str) -> FetchedPage:
@@ -176,9 +247,9 @@ def render_markdown(page: FetchedPage, min_chars: int = 200, content_xpath: str 
     else:
         content = document.summary(html_partial=True)
     body = converter.handle(content).strip()
-    visible = re.sub(r"\s+", " ", re.sub(r"[#*_>`\[\]()]", "", body)).strip()
-    if len(visible) < min_chars:
-        raise RuntimeError(f"main-content extraction returned only {len(visible)} visible characters")
+    visible = visible_chars(body)
+    if visible < min_chars:
+        raise RuntimeError(f"main-content extraction returned only {visible} visible characters")
 
     source = urljoin(page.final_url, canonical) if canonical else page.final_url
     lines = [f"# {title or '(untitled page)'}", "", f"- Source: [link](<{source}>)"]
@@ -223,6 +294,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--min-chars", type=int, default=200)
+    parser.add_argument(
+        "--html",
+        action="store_true",
+        help="convert the HTML page even when the site publishes a Markdown copy",
+    )
     parser.add_argument("--content-xpath", help="explicit content element when automatic article extraction omits relevant content")
     return parser.parse_args(argv)
 
@@ -231,12 +307,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         validate_url(args.url)
-        page = (
-            fetch_browser(args.url, args.timeout, args.browser)
-            if args.browser
-            else fetch_direct(args.url, args.timeout)
-        )
-        markdown = render_markdown(page, min_chars=args.min_chars, content_xpath=args.content_xpath)
+        if args.browser:
+            page = fetch_browser(args.url, args.timeout, args.browser)
+            copy = None
+        else:
+            page = fetch(args.url, args.timeout)
+            native = not (args.html or args.content_xpath)
+            copy = fetch_native_markdown(page, args.timeout, args.min_chars) if native else None
+        if copy is not None:
+            print(f"native Markdown from {copy.final_url}", file=sys.stderr)
+            markdown = native_document(page.final_url, copy)
+        else:
+            validate_page(page)
+            markdown = render_markdown(page, min_chars=args.min_chars, content_xpath=args.content_xpath)
         if args.output:
             atomic_write(args.output.resolve(), markdown)
             print(f"published {args.output.resolve()}", file=sys.stderr)
