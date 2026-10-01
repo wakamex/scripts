@@ -98,6 +98,13 @@ def fetch(url: str, timeout: float) -> FetchedPage:
         allow_redirects=True,
     )
     response.raise_for_status()
+    if "charset" not in response.headers.get("content-type", "").lower():
+        # requests assumes ISO-8859-1 for undeclared text, which garbles UTF-8 pages.
+        try:
+            response.content.decode("utf-8")
+            response.encoding = "utf-8"
+        except UnicodeDecodeError:
+            response.encoding = response.apparent_encoding
     return FetchedPage(
         html=response.text,
         final_url=response.url,

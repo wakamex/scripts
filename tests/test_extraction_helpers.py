@@ -90,25 +90,22 @@ def test_web_rejects_challenge_page() -> None:
         extract_web.validate_page(page)
 
 
-class FakeResponse:
-    def __init__(self, url: str, text: str, content_type: str, status: int = 200) -> None:
-        self.url, self.text, self.status_code = url, text, status
-        self.headers = {"content-type": content_type}
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise extract_web.requests.HTTPError(f"HTTP {self.status_code}")
+def response(url: str, text: str, content_type: str, status: int = 200) -> extract_web.requests.Response:
+    result = extract_web.requests.Response()
+    result.url, result.status_code, result._content = url, status, text.encode()
+    result.headers["content-type"] = content_type
+    return result
 
 
 def serve(monkeypatch: pytest.MonkeyPatch, pages: dict[str, tuple[str, str]]) -> list[str]:
     requested: list[str] = []
 
-    def get(url: str, **_: object) -> FakeResponse:
+    def get(url: str, **_: object) -> extract_web.requests.Response:
         requested.append(url)
         if url not in pages:
-            return FakeResponse(url, "<html>Not found</html>", "text/html", 404)
+            return response(url, "<html>Not found</html>", "text/html", 404)
         text, content_type = pages[url]
-        return FakeResponse(url, text, content_type)
+        return response(url, text, content_type)
 
     monkeypatch.setattr(extract_web.requests, "get", get)
     return requested
@@ -188,6 +185,16 @@ def test_web_html_flag_skips_markdown_copies(monkeypatch: pytest.MonkeyPatch, ca
 
     assert "HTML text" in capsys.readouterr().out
     assert requested == ["https://docs.example/pricing"]
+
+
+def test_web_decodes_utf8_pages_without_a_declared_charset(monkeypatch: pytest.MonkeyPatch) -> None:
+    page = response("https://docs.example/news", "<p>🎉 Until Feb 8: same as V2! Café prices</p>", "text/html")
+    monkeypatch.setattr(extract_web.requests, "get", lambda url, **_: page)
+
+    page = extract_web.fetch("https://docs.example/news", timeout=5)
+
+    assert "🎉 Until Feb 8" in page.html
+    assert "Café" in page.html
 
 
 def reddit_payload() -> list[dict[str, object]]:
