@@ -1,11 +1,11 @@
 @font-face {
-    font-family: "D2CodingLigature";
-    src: url("D2CodingLigature.ttf");
+    font-family: "Clanker Mono NF";
+    src: url("ClankerMono-NF.ttf");
 }
     
 html, body, input, textarea, select, button, dialog {
     background-color: rgb(44, 47, 50);
-    font-family: "D2CodingLigature", sans-serif;
+    font-family: "Clanker Mono NF", sans-serif;
     color-scheme: dark !important;
 }
 html, body, input, textarea, select, button {

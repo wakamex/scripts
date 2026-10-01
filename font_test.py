@@ -16,7 +16,7 @@ def is_emoji_supported_by_font(emoji: str) -> bool:
     return len(glyph_infos) == 1 and glyph_infos[0].cluster == 0
 
 
-with open("D2CodingLigature.ttf", "rb") as fontfile:
+with open("ClankerMono-NF.ttf", "rb") as fontfile:
     fontdata = fontfile.read()
 
 blob = hb.Blob.create(fontdata, length=len(fontdata), mode=1, user_data=None, destroy=None)

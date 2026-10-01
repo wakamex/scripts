@@ -9,7 +9,7 @@
 emojiget='emojiget.py'
 
 # Name-Size
-font_family='D2Codingligature Nerd Font'
+font_family='Clanker Mono NF'
 font_size="14"
 # font_family='"Noto Color Emoji"'
 # font_size="18"

@@ -47,12 +47,12 @@ def from_unicode_escape(s):
 
 # %% [markdown]
 # Load font
-file_path = "D2CodingLigature.ttf"
+file_path = "ClankerMono-NF.ttf"
 
 if not os.path.exists(file_path):
     print("downloading font..", end="")
 
-    urllib.request.urlretrieve("https://mihaicosma.com/D2CodingLigature.ttf", file_path)
+    urllib.request.urlretrieve("https://mihaicosma.com/ClankerMono-NF.ttf", file_path)
     print(". done")
 
 if not os.path.exists(file_path):
