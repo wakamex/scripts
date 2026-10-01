@@ -1,10 +1,22 @@
 [project]
 name = "scripts"
 version = "1001"
+requires-python = ">=3.12"
 authors = [{ name = "Mihai Cosma", email = "mcosma@gmail.com" }]
 
 [project.urls]
 "Homepage" = "https://git.mihaicosma.com/mihaico/scripts"
+
+# Dependencies of the scripts the extraction tests import, which each declare them inline.
+[dependency-groups]
+test = [
+    "beautifulsoup4>=4.13.4",
+    "html2text>=2025.4.15",
+    "playwright>=1.54.0",
+    "pytest",
+    "readability-lxml>=0.8.4.1",
+    "requests>=2.32.4",
+]
 
 [tool.pylint.format]
 max-line-length = "120"
