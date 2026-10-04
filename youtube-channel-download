@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_directory=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+exec uv run --project "$script_directory" python "$script_directory/youtube_channel_download.py" "$@"

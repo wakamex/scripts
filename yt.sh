@@ -16,6 +16,8 @@ Usage: yt.sh [-a] [--yt-dlp-order] [AUTH_OPTIONS] [-o OUTPUT] URL [START_SECONDS
                      Firefox profile path on HOST. Also requires --firefox-ssh.
                      The YT_FIREFOX_SSH_HOST and YT_FIREFOX_PROFILE environment
                      variables provide the same opt-in configuration.
+  --cookies PATH     Use an existing Netscape-format cookie file. This cannot
+                     be combined with the Firefox SSH options.
   -o, --output PATH Publish to PATH instead of output.mp3 or combined.mp4.
   -h, --help        Show this help.
 
@@ -42,6 +44,7 @@ quality_score=true
 output=""
 firefox_ssh=${YT_FIREFOX_SSH_HOST:-}
 firefox_profile=${YT_FIREFOX_PROFILE:-}
+supplied_cookie_file=""
 
 while (( $# )); do
     case "$1" in
@@ -65,6 +68,11 @@ while (( $# )); do
         --firefox-profile)
             (( $# >= 2 )) || fail "$1 requires a path"
             firefox_profile=$2
+            shift 2
+            ;;
+        --cookies)
+            (( $# >= 2 )) || fail "$1 requires a path"
+            supplied_cookie_file=$2
             shift 2
             ;;
         -o|--output)
@@ -106,6 +114,13 @@ if [[ -n "$firefox_ssh" || -n "$firefox_profile" ]]; then
     [[ -n "$firefox_ssh" && -n "$firefox_profile" ]] \
         || fail "--firefox-ssh and --firefox-profile must be used together"
 fi
+if [[ -n "$supplied_cookie_file" ]]; then
+    [[ -z "$firefox_ssh" && -z "$firefox_profile" ]] \
+        || fail "--cookies cannot be combined with the Firefox SSH options"
+    [[ -f "$supplied_cookie_file" && -r "$supplied_cookie_file" ]] \
+        || fail "cookie file is not a readable regular file: $supplied_cookie_file"
+    supplied_cookie_file=$(cd -- "$(dirname -- "$supplied_cookie_file")" && pwd -P)/$(basename -- "$supplied_cookie_file")
+fi
 
 if $audio_only; then
     output=${output:-output.mp3}
@@ -120,7 +135,7 @@ fi
 require_command uvx
 require_command ffmpeg
 require_command ffprobe
-if ! $audio_only && $quality_score; then
+if ! $audio_only && $quality_score && [[ -z "$supplied_cookie_file" ]]; then
     require_command python3
 fi
 if [[ -n "$firefox_ssh" ]]; then
@@ -197,12 +212,13 @@ export_firefox_cookies() {
 
 download_with_retry() {
     local status
-    if run_yt_dlp "" "$@"; then
+    if run_yt_dlp "$supplied_cookie_file" "$@"; then
         return 0
     else
         status=$?
     fi
-    if [[ -z "$firefox_ssh" ]] || ! grep -Fq "Sign in to confirm" "$download_error"; then
+    if [[ -n "$supplied_cookie_file" || -z "$firefox_ssh" ]] \
+        || ! grep -Fq "Sign in to confirm" "$download_error"; then
         return "$status"
     fi
     printf 'YouTube requested sign-in; retrying with the configured Firefox session.\n' >&2
@@ -218,7 +234,7 @@ if $audio_only; then
     downloaded="$stage_directory/download.mp3"
 else
     format_selector='bv*+ba/b'
-    if $quality_score; then
+    if $quality_score && [[ -z "$supplied_cookie_file" ]]; then
         if ! format_selector=$(python3 "$script_directory/yt_quality.py" --format-only "$url"); then
             [[ -n "$firefox_ssh" ]] || exit 1
             printf 'Anonymous quality selection failed; using yt-dlp ordering for the authenticated retry.\n' >&2
