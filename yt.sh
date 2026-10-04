@@ -234,11 +234,13 @@ if $audio_only; then
     downloaded="$stage_directory/download.mp3"
 else
     format_selector='bv*+ba/b'
-    if $quality_score && [[ -z "$supplied_cookie_file" ]]; then
-        if ! format_selector=$(python3 "$script_directory/yt_quality.py" --format-only "$url"); then
+    if $quality_score; then
+        if [[ -n "$supplied_cookie_file" ]]; then
+            format_selector='bv*[height<=1080]+ba/b[height<=1080]/b'
+        elif ! format_selector=$(python3 "$script_directory/yt_quality.py" --format-only "$url"); then
             [[ -n "$firefox_ssh" ]] || exit 1
             printf 'Anonymous quality selection failed; using yt-dlp ordering for the authenticated retry.\n' >&2
-            format_selector='bv*+ba/b'
+            format_selector='bv*[height<=1080]+ba/b[height<=1080]/b'
         fi
     fi
     download_with_retry --format "$format_selector" --merge-output-format mp4 --remux-video mp4 "$url"
