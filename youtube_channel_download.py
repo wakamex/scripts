@@ -21,7 +21,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit, urlunsplit
 
 YT_DLP_VERSION = "2026.8.19"
 DEFAULT_WORKERS = 3
@@ -76,8 +76,14 @@ def is_video_url(url: str) -> bool:
     return host == "youtu.be" or parsed.path.startswith(("/watch", "/shorts/", "/live/"))
 
 
-def videos_url(channel_url: str) -> str:
-    return channel_url.rstrip("/") if channel_url.rstrip("/").endswith("/videos") else f"{channel_url.rstrip('/')}/videos"
+def channel_root_url(channel_url: str) -> str:
+    parsed = urlsplit(channel_url)
+    path = parsed.path.rstrip("/")
+    for suffix in ("/videos", "/shorts", "/streams", "/featured"):
+        if path.endswith(suffix):
+            path = path[: -len(suffix)]
+            break
+    return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
 
 
 def yt_dlp_command() -> list[str]:
@@ -105,7 +111,7 @@ def run_json_command(command: list[str]) -> str:
 
 def resolve_channel_url(source_url: str, cookie_file: Path | None) -> str:
     if not is_video_url(source_url):
-        return videos_url(source_url)
+        return channel_root_url(source_url)
 
     command = [
         *yt_dlp_command(),
@@ -119,7 +125,7 @@ def resolve_channel_url(source_url: str, cookie_file: Path | None) -> str:
     channel_url = payload.get("channel_url") or payload.get("uploader_url")
     if not isinstance(channel_url, str) or not channel_url.startswith("http"):
         raise RuntimeError(f"YouTube metadata did not identify a channel for {source_url}")
-    return videos_url(channel_url)
+    return channel_root_url(channel_url)
 
 
 def parse_entries(output: str) -> list[Video]:

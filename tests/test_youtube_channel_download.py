@@ -13,11 +13,11 @@ class YouTubeChannelDownloadTests(unittest.TestCase):
     """Exercise channel enumeration, command construction, and manifests."""
 
     def test_resolves_channel_and_video_urls(self) -> None:
-        """Channel inputs gain a videos suffix while video inputs remain identifiable."""
-        self.assertEqual(module.videos_url("https://www.youtube.com/@example"), "https://www.youtube.com/@example/videos")
+        """Channel inputs resolve to roots that include regular videos and Shorts."""
+        self.assertEqual(module.channel_root_url("https://www.youtube.com/@example"), "https://www.youtube.com/@example")
         self.assertEqual(
-            module.videos_url("https://www.youtube.com/channel/UC123/videos"),
-            "https://www.youtube.com/channel/UC123/videos",
+            module.channel_root_url("https://www.youtube.com/channel/UC123/videos?view=0"),
+            "https://www.youtube.com/channel/UC123",
         )
         self.assertTrue(module.is_video_url("https://www.youtube.com/watch?v=abcdefghijk"))
         self.assertTrue(module.is_video_url("https://youtu.be/abcdefghijk"))
