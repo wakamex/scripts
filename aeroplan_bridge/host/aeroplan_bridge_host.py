@@ -6,9 +6,9 @@ the extension to run an award search in the signed-in browser profile:
 
     GET  /status   extension connection and bridge tab state
     POST /search   {"origin": "YOW", "destination": "YVR", "date": "2026-11-18", "adults": 1}
-    POST /signin   {"user": "...", "password": "..."} or {"code": "123456"}  types the login, or the
-                   one-time code Aeroplan sends afterwards, into the bridge tab; not stored
-    POST /reload   reloads the extension from disk after an update
+    POST /signin   {"emailCode": true} signs in with the browser's saved login and asks for the
+                   one-time code by email; {"code": "123456"} enters that code. A "user" and
+                   "password" are typed instead of the saved login when given; nothing is stored
 
 Searches run one at a time and at least MIN_INTERVAL seconds apart. Standard library only.
 """
@@ -96,13 +96,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(503, {"error": "extension not connected"})
             log("sign-in requested")
             result = ask_extension({"type": "signin", "user": params.get("user", ""), "password": params.get("password", ""),
-                                    "code": params.get("code", "")}, 60)
+                                    "code": params.get("code", ""), "emailCode": bool(params.get("emailCode"))}, 60)
             log(f"sign-in ok={result.get('ok')} error={result.get('error')}")
             return self.respond(200, result)
-        if self.path == "/reload":
-            send({"type": "reload"})
-            log("extension reload requested")
-            return self.respond(200, {"ok": True})
         if self.path != "/search":
             return self.respond(404, {"error": "not found"})
         missing = [k for k in ("origin", "destination", "date") if not params.get(k)]

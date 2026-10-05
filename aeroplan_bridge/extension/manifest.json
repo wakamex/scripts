@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Aeroplan bridge",
-  "version": "1.5",
+  "version": "1.9",
   "description": "Runs Aeroplan award searches in this signed-in tab for the aeroplan_value.py command-line tool.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv8ZqVX31r+uABjj9iLwzK2Bo6AvuE8majfq2haVrMspm8KK0ZauXzI51UNKHY6S2bfoU/2F9OV3E+Jgc9tAGysEKnSlNEssrN2oJQGlg8wisrU9IUNIYce7fPiVh8eU/9sIp9K4kbe8k5ukVNjnaUfayGQ1mlhHHAsr9GBJzIgMcafInoFxbnepyTGl4s9oxR7FfrZbHgrC3J1BWTzrwIbSbAX7qbBjC5s6lyTYd9Y3skeRWGyP8tSMuQgC3YGFH/GZDeOROGa7tRFV1d+gHYaLbrBVIoREr1vG2BguPBV1AMfnFoThA8vqWB1DPbbdSgtflPg0XpVwkxYdVc1eUTQIDAQAB",
   "permissions": [

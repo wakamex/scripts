@@ -18,7 +18,8 @@ cash side comes from Google Flights. Each itinerary that appears in both is valu
 and every check is appended to a CSV log. Each run also keeps its raw award responses,
 cash fares and computed results in its own folder under ~/.local/share/aeroplan_value/runs/.
 
-Sign the bridge in when its session expires: --sign-in, then --code with the code Aeroplan texts.
+Sign the bridge in when its session expires with --sign-in: it asks Aeroplan to email the one-time
+code and reads it from Gmail with the app password git send-email uses. --code enters a code by hand.
 
 Examples:
   aeroplan_value.py YOW YVR 2026-11-18
@@ -30,7 +31,6 @@ Examples:
 from __future__ import annotations
 
 import argparse
-import getpass
 import os
 import re
 import csv
@@ -181,12 +181,85 @@ def fetch_award(origin, destination, day, adults, run_dir):
         result = bridge_request("/search", {"origin": origin, "destination": destination, "date": day, "adults": adults})
     except BridgeError as e:
         sys.exit(f"error: {e}")
+    if result.get("error") == "signed_out":
+        log("bridge session expired; signing in again")
+        if sign_in() != 0:
+            sys.exit("error: automatic sign-in failed; see the bridge host log")
+        try:
+            result = bridge_request("/search", {"origin": origin, "destination": destination, "date": day, "adults": adults})
+        except BridgeError as e:
+            sys.exit(f"error: {e}")
     (run_dir / "award.json").write_text(json.dumps(result, indent=1))
     if not result.get("ok"):
-        hint = {"signed_out": "sign in to Aeroplan again in the bridge Chrome profile",
+        hint = {"signed_out": "automatic sign-in did not hold; try --sign-in",
                 "timeout": "the award page did not return results in time"}.get(result.get("error"), "")
         sys.exit(f"error: bridge search failed: {result.get('error')}" + (f"; {hint}" if hint else ""))
     return result.get("responses") or []
+
+
+GMAIL_USER = "mcosma@gmail.com"
+
+
+def gmail_password():
+    """The Gmail app password, from GMAIL_APP_PASSWORD or the one git send-email uses."""
+    if os.environ.get("GMAIL_APP_PASSWORD"):
+        return os.environ["GMAIL_APP_PASSWORD"]
+    out = subprocess.run(["git", "credential", "fill"], capture_output=True, text=True,
+                         input=f"protocol=smtp\nhost=smtp.gmail.com:587\nusername={GMAIL_USER}\n\n",
+                         env={**os.environ, "GIT_TERMINAL_PROMPT": "0"}).stdout
+    for line in out.splitlines():
+        if line.startswith("password="):
+            return line.split("=", 1)[1]
+    sys.exit("error: no Gmail app password (set GMAIL_APP_PASSWORD or store it for git send-email)")
+
+
+def gmail_code(since, timeout=240):
+    """Wait for an Aeroplan code email received after `since` (epoch seconds) and return its 6-digit code."""
+    import email
+    import imaplib
+    from email.utils import parsedate_to_datetime
+
+    password = gmail_password()
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        mail = imaplib.IMAP4_SSL("imap.gmail.com")
+        try:
+            mail.login(GMAIL_USER, password)
+            mail.select("INBOX", readonly=True)
+            # The codes come from info@communications.aeroplan.com ("Verification code to access your account").
+            _, data = mail.search(None, f'(FROM "aeroplan.com" SINCE {time.strftime("%d-%b-%Y", time.gmtime(since - 86400))})')
+            for msg_id in reversed(data[0].split()[-10:]):
+                _, parts = mail.fetch(msg_id, "(BODY.PEEK[])")
+                message = email.message_from_bytes(parts[0][1])
+                if parsedate_to_datetime(message["Date"]).timestamp() < since - 60:
+                    continue
+                body = " ".join(p.get_payload(decode=True).decode(errors="ignore") for p in message.walk()
+                                if p.get_content_type() in ("text/plain", "text/html"))
+                if m := re.search(r"(?<![\d#])(\d{6})(?!\d)", re.sub(r"<[^>]+>", " ", body)):
+                    return m.group(1)
+        finally:
+            mail.logout()
+        time.sleep(10)
+    sys.exit("error: no Aeroplan code email arrived")
+
+
+def sign_in():
+    """Sign the bridge browser in, asking for the one-time code by email and reading it from Gmail."""
+    # The bridge browser fills in its saved login; AEROPLAN_USER/AEROPLAN_PASSWORD override it.
+    payload = {"user": os.environ.get("AEROPLAN_USER", ""), "password": os.environ.get("AEROPLAN_PASSWORD", ""),
+               "emailCode": True}
+    started = time.time()
+    try:
+        result = bridge_request("/signin", payload, timeout=90)
+        if result.get("state") == "email_code_sent":
+            log("code requested by email; waiting for it in Gmail")
+            code = gmail_code(started)
+            log("entering the code")
+            result = bridge_request("/signin", {"code": code}, timeout=90)
+    except BridgeError as e:
+        sys.exit(f"error: {e}")
+    log("signed in" if result.get("ok") else f"sign-in did not finish: {json.dumps(result)}")
+    return 0 if result.get("ok") else 1
 
 
 def log(message):
@@ -194,6 +267,35 @@ def log(message):
 
 
 # ----------------------------------------------------------------- cash side
+
+def google_time(value):
+    """Google omits zero components: [8] is 08:00 and [None, 31] is 00:31."""
+    hour, minute = [*(value or []), None, None][:2]
+    return hour or 0, minute or 0
+
+
+def parse_google_flights(payload):
+    """Itineraries with a total cash price from Google Flights' embedded results data.
+
+    payload[2] holds the "best" itineraries and payload[3] the rest; each segment carries the
+    marketing flight number in field 22. Entries without a price are skipped.
+    """
+    itineraries = []
+    for block in (payload[2], payload[3]):
+        for entry in (block or [None])[0] or []:
+            price = (entry[1] or [[None, None]])[0]
+            if not price or len(price) < 2 or price[1] is None:
+                continue
+            segments = []
+            for seg in entry[0][2]:
+                hour, minute = google_time(seg[8])
+                year, month, day = seg[20]
+                number = seg[22] or []
+                segments.append(Segment(seg[3], seg[6], f"{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}",
+                                        f"{number[0]}{number[1]}" if len(number) > 1 else ""))
+            itineraries.append(Itinerary(segments=segments, cash=float(price[1])))
+    return itineraries
+
 
 def fetch_cash(origin, destination, day, adults, include_basic=False):
     """Google Flights fares for the same day, as itineraries with a total cash price in CAD."""
@@ -203,13 +305,12 @@ def fetch_cash(origin, destination, day, adults, include_basic=False):
         flights=[ff.FlightQuery(date=day, from_airport=origin, to_airport=destination)],
         trip="one-way", seat="economy", passengers=ff.Passengers(adults=adults),
         currency="CAD", language="en-US", exclude_basic_economy=not include_basic)
-    itineraries = []
-    for result in ff.get_flights(query):
-        segments = [Segment(origin=leg.from_airport.code, destination=leg.to_airport.code,
-                            departs="{:04d}-{:02d}-{:02d}T{:02d}:{:02d}".format(*leg.departure.date, *leg.departure.time))
-                    for leg in result.flights]
-        itineraries.append(Itinerary(segments=segments, cash=float(result.price)))
-    return itineraries
+    html = ff.fetch_flights_html(query)
+    script = re.search(r'<script class="ds:1"[^>]*>(.*?)</script>', html, re.S)
+    if not script:
+        sys.exit("error: Google Flights returned no results data")
+    payload = json.loads(script.group(1).split("data:", 1)[1].rsplit(",", 1)[0])
+    return parse_google_flights(payload)
 
 
 def match(awards, cash):
@@ -276,23 +377,20 @@ def main(argv=None):
     parser.add_argument("--history", action="store_true", help=f"print the log of past checks ({LOG})")
     parser.add_argument("--status", action="store_true", help="check that the Windows bridge and its browser tab are up")
     parser.add_argument("--sign-in", action="store_true",
-                        help="sign the bridge browser in to Aeroplan (login from AEROPLAN_USER/AEROPLAN_PASSWORD or a prompt; not stored)")
-    parser.add_argument("--code", help="enter the one-time code Aeroplan sends after --sign-in")
+                        help="sign the bridge browser in with its saved login, reading the emailed code from Gmail")
+    parser.add_argument("--code", help="enter a one-time code from Aeroplan by hand")
     args = parser.parse_args(argv)
 
     if args.history:
         return show_history()
-    if args.sign_in or args.code:
-        if args.code:
-            payload = {"code": args.code}
-        else:
-            payload = {"user": os.environ.get("AEROPLAN_USER") or input("Aeroplan number or email: "),
-                       "password": os.environ.get("AEROPLAN_PASSWORD") or getpass.getpass("Aeroplan password: ")}
+    if args.code:
         try:
-            print(json.dumps(bridge_request("/signin", payload, timeout=90), indent=1))
+            print(json.dumps(bridge_request("/signin", {"code": args.code}, timeout=90), indent=1))
         except BridgeError as e:
             sys.exit(f"error: {e}")
         return 0
+    if args.sign_in:
+        return sign_in()
     if args.status:
         try:
             print(json.dumps(bridge_request("/status", timeout=30), indent=1))

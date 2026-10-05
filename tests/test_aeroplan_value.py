@@ -67,6 +67,18 @@ class AwardResponseTests(unittest.TestCase):
         self.assertEqual((standard.points, standard.taxes, standard.cabin), (17528, 55.89, "economy"))
 
 
+class GoogleFlightsTests(unittest.TestCase):
+    """Real Google Flights results data for YOW-SFO (two best, two other and one unpriced itinerary)."""
+
+    FIXTURE = Path(__file__).resolve().parent / "fixtures" / "google_flights_payload.json"
+
+    def test_reads_both_lists_with_flight_numbers_and_skips_unpriced(self):
+        rows = av.parse_google_flights(json.loads(self.FIXTURE.read_text()))
+        self.assertEqual(len(rows), 4)
+        self.assertEqual([s.flight for s in rows[0].segments], ["WS589", "DL5073", "DL469"])
+        self.assertEqual((rows[0].segments[0].departs, rows[0].cash), ("2026-11-18T05:30", 391.0))
+
+
 class BridgeHostTests(unittest.TestCase):
     """Drives the Windows host over Chrome's native messaging framing, playing the extension's side."""
 

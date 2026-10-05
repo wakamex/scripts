@@ -2,6 +2,7 @@
 // by loading Aeroplan's award search page in a dedicated tab of this signed-in browser profile.
 
 const HOST = "ca.mihaicosma.aeroplan_bridge";
+const SCRIPT_VERSION = "1.9";  // reported in hello, to confirm Chrome is running this copy of the script
 const SEARCH_URL = "https://www.aircanada.com/aeroplan/redeem/availability/outbound";
 const PAGE_TIMEOUT_MS = 60000;   // time allowed for the page to load and search
 const SETTLE_MS = 4000;          // later result pages arrive shortly after the first
@@ -16,7 +17,7 @@ function connect() {
     console.warn("native host disconnected", chrome.runtime.lastError?.message);
     port = null;
   });
-  port.postMessage({ type: "hello", version: chrome.runtime.getManifest().version });
+  port.postMessage({ type: "hello", version: `${chrome.runtime.getManifest().version}/${SCRIPT_VERSION}` });
 }
 
 function reply(message) {
@@ -87,20 +88,23 @@ async function signIn(message) {
   const target = { tabId: tab.id };
   const send = (method, params) => chrome.debugger.sendCommand(target, method, params);
   const pause = ms => new Promise(r => setTimeout(r, ms));
-  const visible = selector => `[...document.querySelectorAll('${selector}')].find(e => e.offsetParent !== null)`;
-  const centre = async selector => {
-    const { result } = await send("Runtime.evaluate", { returnByValue: true, expression:
-      `(() => { const e = ${visible(selector)}; if (!e) return null; const r = e.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()` });
+  // The page keeps hidden copies of its login screens, so pick the element the user can actually
+  // click: scrolled into view and topmost at its own centre.
+  const locate = async (filter) => {
+    const { result } = await send("Runtime.evaluate", { returnByValue: true, expression: `(() => {
+      for (const e of [...document.querySelectorAll('input, button, a')].filter(${filter})) {
+        if (e.offsetParent === null) continue;
+        e.scrollIntoView({ block: "center" });
+        const r = e.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
+        const hit = document.elementFromPoint(x, y);
+        if (hit && (hit === e || e.contains(hit) || hit.contains(e))) return [x, y];
+      }
+      return null; })()` });
     return result.value;
   };
-  // The visible button, input or link whose label is exactly `label` (the page also shows "Resend").
-  const centreOfLabel = async label => {
-    const { result } = await send("Runtime.evaluate", { returnByValue: true, expression:
-      `(() => { const e = [...document.querySelectorAll('button, input[type=submit], input[type=button], a')]
-          .find(e => e.offsetParent !== null && (e.value || e.innerText || "").trim() === ${JSON.stringify(label)});
-        if (!e) return null; const r = e.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()` });
-    return result.value;
-  };
+  const centre = selector => locate(`e => e.matches(${JSON.stringify(selector)})`);
+  // The control whose label is exactly `label` (the code screen also shows "Resend").
+  const centreOfLabel = label => locate(`e => (e.value || e.innerText || "").trim() === ${JSON.stringify(label)}`);
   const click = async ([x, y]) => {
     for (const type of ["mousePressed", "mouseReleased"]) {
       await send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
@@ -120,12 +124,12 @@ async function signIn(message) {
     if (message.code) {
       // Second step: the one-time code Aeroplan sends by text or email after the password.
       const box = await centre('input[name="code"]') || await centre('input[placeholder="Enter Code"]');
-      const go = await centreOfLabel("Continue");
+      const go = await centreOfLabel("Submit") || await centreOfLabel("Continue");  // email section, phone section
       note(`sign-in: code form at ${JSON.stringify({ box, go })}`);
       if (!box || !go) throw new Error("code form not found");
       await click(box);
       // Select any earlier code so typing replaces it.
-      await send("Runtime.evaluate", { expression: `${visible('input[name="code"]')}?.select()` });
+      await send("Runtime.evaluate", { expression: "document.activeElement?.select?.()" });
       await typeText(message.code); await pause(500);
       await click(go);
       await pause(15000);
@@ -136,12 +140,31 @@ async function signIn(message) {
     const password = await centre('input[autocomplete="current-password"]');
     const submit = await centre('input[type="submit"][value="Sign in"]');
     note(`sign-in: form at ${JSON.stringify({ user, password, submit })}`);
-    if (!user || !password || !submit) throw new Error(`sign-in form not found on ${tab.url}`);
-    await click(user); await typeText(message.user); await pause(400);
-    await click(password); await typeText(message.password); await pause(600);
-    note("sign-in: typed; submitting");
-    await click(submit);
-    await pause(15000);
+    if (user && password && submit) {
+      if (message.user && message.password) {
+        await click(user); await typeText(message.user); await pause(400);
+        await click(password); await typeText(message.password); await pause(600);
+        note("sign-in: typed; submitting");
+      } else {
+        // Chrome's saved login: a real click releases the autofilled values to the page.
+        await click(user); await pause(400); await click(password); await pause(600);
+        note("sign-in: using saved login; submitting");
+      }
+      await click(submit);
+      await pause(15000);
+    } else if (!message.emailCode) {
+      throw new Error(`sign-in form not found on ${tab.url}`);
+    }
+    if (message.emailCode) {
+      // Ask for the one-time code by email, which aeroplan_value.py reads from Gmail.
+      const sendCode = await centreOfLabel("Send Code");
+      note(`sign-in: email Send Code at ${JSON.stringify(sendCode)}`);
+      if (sendCode) {
+        await click(sendCode);
+        await pause(4000);
+        return reply({ type: "result", id: message.id, ok: false, state: "email_code_sent" });
+      }
+    }
     const after = await chrome.tabs.get(tab.id);
     reply({ type: "result", id: message.id, ok: !after.url.includes("/clogin/"), url: after.url, title: after.title });
   } catch (e) {
@@ -157,7 +180,6 @@ function onHostMessage(message) {
   if (message.type === "search") runSearch(message);
   else if (message.type === "status") status(message);
   else if (message.type === "signin") signIn(message);
-  else if (message.type === "reload") chrome.runtime.reload();  // re-read the extension from disk
 }
 
 chrome.runtime.onMessage.addListener((message, sender) => {
