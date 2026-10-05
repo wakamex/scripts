@@ -1,0 +1,920 @@
+{
+ "data": {
+  "airBoundGroups": [
+   {
+    "boundDetails": {
+     "originLocationCode": "YOW",
+     "destinationLocationCode": "YVR",
+     "duration": 28620,
+     "ranking": 7,
+     "segments": [
+      {
+       "flightId": "SEG-AC353-YOWYYC-2026-11-18-0750",
+       "connectionTime": 5100
+      },
+      {
+       "flightId": "SEG-AC209-YYCYVR-2026-11-18-1300"
+      }
+     ]
+    },
+    "airBounds": [
+     {
+      "airBoundId": "BC1-1-1I1ACZ_XJVN5V9JQL0ZXS4K37G3YF0J1L49",
+      "fareFamilyCode": "STANDARD",
+      "availabilityDetails": [
+       {
+        "flightId": "SEG-AC353-YOWYYC-2026-11-18-0750",
+        "cabin": "eco",
+        "bookingClass": "G",
+        "statusCode": "HK",
+        "quota": 9,
+        "mileagePercentage": 80.74
+       },
+       {
+        "flightId": "SEG-AC209-YYCYVR-2026-11-18-1300",
+        "cabin": "eco",
+        "bookingClass": "G",
+        "statusCode": "HK",
+        "quota": 9,
+        "mileagePercentage": 19.26
+       }
+      ],
+      "fareInfos": [
+       {
+        "fareType": "unifares",
+        "fareClass": "GAAEROTG",
+        "pricedPassengerTypeCodes": [
+         "ADT"
+        ],
+        "travelerIds": [
+         "ADT-1"
+        ],
+        "ticketDesignator": "AE1",
+        "corporateCode": "169147",
+        "flightIds": [
+         "SEG-AC353-YOWYYC-2026-11-18-0750",
+         "SEG-AC209-YYCYVR-2026-11-18-1300"
+        ]
+       }
+      ],
+      "prices": {
+       "unitPrices": [
+        {
+         "travelerIds": [
+          "ADT-1"
+         ],
+         "prices": [
+          {
+           "base": 0,
+           "total": 5589,
+           "currencyCode": "CAD",
+           "taxes": [
+            {
+             "value": 0,
+             "currencyCode": "CAD",
+             "code": "YQYR"
+            }
+           ],
+           "totalTaxes": 5589
+          }
+         ],
+         "milesConversion": {
+          "convertedMiles": {
+           "base": 17528,
+           "total": 23117,
+           "totalTaxes": 5589
+          },
+          "remainingNonConverted": {
+           "total": 0,
+           "currencyCode": "CAD",
+           "totalTaxes": 0
+          }
+         }
+        }
+       ],
+       "totalPrices": [
+        {
+         "base": 0,
+         "total": 5589,
+         "currencyCode": "CAD",
+         "totalTaxes": 5589
+        }
+       ],
+       "isRedemption": false,
+       "milesConversion": {
+        "convertedMiles": {
+         "base": 17528,
+         "total": 23117,
+         "totalTaxes": 5589
+        },
+        "remainingNonConverted": {
+         "total": 0,
+         "currencyCode": "CAD",
+         "totalTaxes": 0
+        }
+       }
+      },
+      "airOffer": {
+       "totalPrice": {
+        "value": 5589,
+        "currencyCode": "CAD"
+       },
+       "prices": {
+        "unitPrices": [
+         {
+          "travelerIds": [
+           "ADT-1"
+          ],
+          "prices": [
+           {
+            "base": 0,
+            "total": 5589,
+            "currencyCode": "CAD",
+            "taxes": [
+             {
+              "value": 0,
+              "currencyCode": "CAD",
+              "code": "YQYR"
+             }
+            ],
+            "totalTaxes": 5589
+           }
+          ],
+          "milesConversion": {
+           "convertedMiles": {
+            "base": 17528,
+            "total": 23117,
+            "totalTaxes": 5589
+           },
+           "remainingNonConverted": {
+            "total": 0,
+            "currencyCode": "CAD",
+            "totalTaxes": 0
+           }
+          }
+         }
+        ],
+        "totalPrices": [
+         {
+          "base": 0,
+          "total": 5589,
+          "currencyCode": "CAD",
+          "totalTaxes": 5589
+         }
+        ],
+        "isRedemption": false,
+        "milesConversion": {
+         "convertedMiles": {
+          "base": 17528,
+          "total": 23117,
+          "totalTaxes": 5589
+         },
+         "remainingNonConverted": {
+          "total": 0,
+          "currencyCode": "CAD",
+          "totalTaxes": 0
+         }
+        }
+       },
+       "milesConversion": {
+        "convertedMiles": {
+         "base": 17528,
+         "total": 23117,
+         "totalTaxes": 5589
+        },
+        "remainingNonConverted": {
+         "total": 0
+        }
+       }
+      }
+     },
+     {
+      "airBoundId": "BC1-1-1I1ACZ_217V9ADRGNVQHAFOPSWPQWFIF3BK",
+      "fareFamilyCode": "FLEX",
+      "availabilityDetails": [
+       {
+        "flightId": "SEG-AC353-YOWYYC-2026-11-18-0750",
+        "cabin": "eco",
+        "bookingClass": "G",
+        "statusCode": "HK",
+        "quota": 9,
+        "mileagePercentage": 80.74
+       },
+       {
+        "flightId": "SEG-AC209-YYCYVR-2026-11-18-1300",
+        "cabin": "eco",
+        "bookingClass": "G",
+        "statusCode": "HK",
+        "quota": 9,
+        "mileagePercentage": 19.26
+       }
+      ],
+      "fareInfos": [
+       {
+        "fareType": "unifares",
+        "fareClass": "GAAEROFL",
+        "pricedPassengerTypeCodes": [
+         "ADT"
+        ],
+        "travelerIds": [
+         "ADT-1"
+        ],
+        "ticketDesignator": "AE1",
+        "corporateCode": "169147",
+        "flightIds": [
+         "SEG-AC353-YOWYYC-2026-11-18-0750",
+         "SEG-AC209-YYCYVR-2026-11-18-1300"
+        ]
+       }
+      ],
+      "prices": {
+       "unitPrices": [
+        {
+         "travelerIds": [
+          "ADT-1"
+         ],
+         "prices": [
+          {
+           "base": 0,
+           "total": 5589,
+           "currencyCode": "CAD",
+           "taxes": [
+            {
+             "value": 0,
+             "currencyCode": "CAD",
+             "code": "YQYR"
+            }
+           ],
+           "totalTaxes": 5589
+          }
+         ],
+         "milesConversion": {
+          "convertedMiles": {
+           "base": 26878,
+           "total": 32467,
+           "totalTaxes": 5589
+          },
+          "remainingNonConverted": {
+           "total": 0,
+           "currencyCode": "CAD",
+           "totalTaxes": 0
+          }
+         }
+        }
+       ],
+       "totalPrices": [
+        {
+         "base": 0,
+         "total": 5589,
+         "currencyCode": "CAD",
+         "totalTaxes": 5589
+        }
+       ],
+       "isRedemption": false,
+       "milesConversion": {
+        "convertedMiles": {
+         "base": 26878,
+         "total": 32467,
+         "totalTaxes": 5589
+        },
+        "remainingNonConverted": {
+         "total": 0,
+         "currencyCode": "CAD",
+         "totalTaxes": 0
+        }
+       }
+      },
+      "airOffer": {
+       "totalPrice": {
+        "value": 5589,
+        "currencyCode": "CAD"
+       },
+       "prices": {
+        "unitPrices": [
+         {
+          "travelerIds": [
+           "ADT-1"
+          ],
+          "prices": [
+           {
+            "base": 0,
+            "total": 5589,
+            "currencyCode": "CAD",
+            "taxes": [
+             {
+              "value": 0,
+              "currencyCode": "CAD",
+              "code": "YQYR"
+             }
+            ],
+            "totalTaxes": 5589
+           }
+          ],
+          "milesConversion": {
+           "convertedMiles": {
+            "base": 26878,
+            "total": 32467,
+            "totalTaxes": 5589
+           },
+           "remainingNonConverted": {
+            "total": 0,
+            "currencyCode": "CAD",
+            "totalTaxes": 0
+           }
+          }
+         }
+        ],
+        "totalPrices": [
+         {
+          "base": 0,
+          "total": 5589,
+          "currencyCode": "CAD",
+          "totalTaxes": 5589
+         }
+        ],
+        "isRedemption": false,
+        "milesConversion": {
+         "convertedMiles": {
+          "base": 26878,
+          "total": 32467,
+          "totalTaxes": 5589
+         },
+         "remainingNonConverted": {
+          "total": 0,
+          "currencyCode": "CAD",
+          "totalTaxes": 0
+         }
+        }
+       },
+       "milesConversion": {
+        "convertedMiles": {
+         "base": 26878,
+         "total": 32467,
+         "totalTaxes": 5589
+        },
+        "remainingNonConverted": {
+         "total": 0
+        }
+       }
+      }
+     },
+     {
+      "airBoundId": "BC1-1-1I1ACZ_PPKSPGOCED0YRPRCFT5PR6V84G9H",
+      "fareFamilyCode": "LATITUDE",
+      "availabilityDetails": [
+       {
+        "flightId": "SEG-AC353-YOWYYC-2026-11-18-0750",
+        "cabin": "eco",
+        "bookingClass": "G",
+        "statusCode": "HK",
+        "quota": 9,
+        "mileagePercentage": 80.74
+       },
+       {
+        "flightId": "SEG-AC209-YYCYVR-2026-11-18-1300",
+        "cabin": "eco",
+        "bookingClass": "G",
+        "statusCode": "HK",
+        "quota": 9,
+        "mileagePercentage": 19.26
+       }
+      ],
+      "fareInfos": [
+       {
+        "fareType": "unifares",
+        "fareClass": "GAAEROLT",
+        "pricedPassengerTypeCodes": [
+         "ADT"
+        ],
+        "travelerIds": [
+         "ADT-1"
+        ],
+        "ticketDesignator": "AE1",
+        "corporateCode": "169147",
+        "flightIds": [
+         "SEG-AC353-YOWYYC-2026-11-18-0750",
+         "SEG-AC209-YYCYVR-2026-11-18-1300"
+        ]
+       }
+      ],
+      "prices": {
+       "unitPrices": [
+        {
+         "travelerIds": [
+          "ADT-1"
+         ],
+         "prices": [
+          {
+           "base": 0,
+           "total": 5589,
+           "currencyCode": "CAD",
+           "taxes": [
+            {
+             "value": 0,
+             "currencyCode": "CAD",
+             "code": "YQYR"
+            }
+           ],
+           "totalTaxes": 5589
+          }
+         ],
+         "milesConversion": {
+          "convertedMiles": {
+           "base": 40478,
+           "total": 46067,
+           "totalTaxes": 5589
+          },
+          "remainingNonConverted": {
+           "total": 0,
+           "currencyCode": "CAD",
+           "totalTaxes": 0
+          }
+         }
+        }
+       ],
+       "totalPrices": [
+        {
+         "base": 0,
+         "total": 5589,
+         "currencyCode": "CAD",
+         "totalTaxes": 5589
+        }
+       ],
+       "isRedemption": false,
+       "milesConversion": {
+        "convertedMiles": {
+         "base": 40478,
+         "total": 46067,
+         "totalTaxes": 5589
+        },
+        "remainingNonConverted": {
+         "total": 0,
+         "currencyCode": "CAD",
+         "totalTaxes": 0
+        }
+       }
+      },
+      "airOffer": {
+       "totalPrice": {
+        "value": 5589,
+        "currencyCode": "CAD"
+       },
+       "prices": {
+        "unitPrices": [
+         {
+          "travelerIds": [
+           "ADT-1"
+          ],
+          "prices": [
+           {
+            "base": 0,
+            "total": 5589,
+            "currencyCode": "CAD",
+            "taxes": [
+             {
+              "value": 0,
+              "currencyCode": "CAD",
+              "code": "YQYR"
+             }
+            ],
+            "totalTaxes": 5589
+           }
+          ],
+          "milesConversion": {
+           "convertedMiles": {
+            "base": 40478,
+            "total": 46067,
+            "totalTaxes": 5589
+           },
+           "remainingNonConverted": {
+            "total": 0,
+            "currencyCode": "CAD",
+            "totalTaxes": 0
+           }
+          }
+         }
+        ],
+        "totalPrices": [
+         {
+          "base": 0,
+          "total": 5589,
+          "currencyCode": "CAD",
+          "totalTaxes": 5589
+         }
+        ],
+        "isRedemption": false,
+        "milesConversion": {
+         "convertedMiles": {
+          "base": 40478,
+          "total": 46067,
+          "totalTaxes": 5589
+         },
+         "remainingNonConverted": {
+          "total": 0,
+          "currencyCode": "CAD",
+          "totalTaxes": 0
+         }
+        }
+       },
+       "milesConversion": {
+        "convertedMiles": {
+         "base": 40478,
+         "total": 46067,
+         "totalTaxes": 5589
+        },
+        "remainingNonConverted": {
+         "total": 0
+        }
+       }
+      }
+     },
+     {
+      "airBoundId": "BC1-1-1I1ACZ_PP4IISYOZCSUCWPNXTNC3TZZDA2G",
+      "fareFamilyCode": "EXECSTAND",
+      "availabilityDetails": [
+       {
+        "flightId": "SEG-AC353-YOWYYC-2026-11-18-0750",
+        "cabin": "business",
+        "bookingClass": "P",
+        "statusCode": "HK",
+        "quota": 5,
+        "mileagePercentage": 80.74
+       },
+       {
+        "flightId": "SEG-AC209-YYCYVR-2026-11-18-1300",
+        "cabin": "business",
+        "bookingClass": "P",
+        "statusCode": "HK",
+        "quota": 5,
+        "mileagePercentage": 19.26
+       }
+      ],
+      "fareInfos": [
+       {
+        "fareType": "unifares",
+        "fareClass": "PVAEROEL",
+        "pricedPassengerTypeCodes": [
+         "ADT"
+        ],
+        "travelerIds": [
+         "ADT-1"
+        ],
+        "ticketDesignator": "AE1",
+        "corporateCode": "169147",
+        "flightIds": [
+         "SEG-AC353-YOWYYC-2026-11-18-0750",
+         "SEG-AC209-YYCYVR-2026-11-18-1300"
+        ]
+       }
+      ],
+      "prices": {
+       "unitPrices": [
+        {
+         "travelerIds": [
+          "ADT-1"
+         ],
+         "prices": [
+          {
+           "base": 0,
+           "total": 5589,
+           "currencyCode": "CAD",
+           "taxes": [
+            {
+             "value": 0,
+             "currencyCode": "CAD",
+             "code": "YQYR"
+            }
+           ],
+           "totalTaxes": 5589
+          }
+         ],
+         "milesConversion": {
+          "convertedMiles": {
+           "base": 42725,
+           "total": 48314,
+           "totalTaxes": 5589
+          },
+          "remainingNonConverted": {
+           "total": 0,
+           "currencyCode": "CAD",
+           "totalTaxes": 0
+          }
+         }
+        }
+       ],
+       "totalPrices": [
+        {
+         "base": 0,
+         "total": 5589,
+         "currencyCode": "CAD",
+         "totalTaxes": 5589
+        }
+       ],
+       "isRedemption": false,
+       "milesConversion": {
+        "convertedMiles": {
+         "base": 42725,
+         "total": 48314,
+         "totalTaxes": 5589
+        },
+        "remainingNonConverted": {
+         "total": 0,
+         "currencyCode": "CAD",
+         "totalTaxes": 0
+        }
+       }
+      },
+      "airOffer": {
+       "totalPrice": {
+        "value": 5589,
+        "currencyCode": "CAD"
+       },
+       "prices": {
+        "unitPrices": [
+         {
+          "travelerIds": [
+           "ADT-1"
+          ],
+          "prices": [
+           {
+            "base": 0,
+            "total": 5589,
+            "currencyCode": "CAD",
+            "taxes": [
+             {
+              "value": 0,
+              "currencyCode": "CAD",
+              "code": "YQYR"
+             }
+            ],
+            "totalTaxes": 5589
+           }
+          ],
+          "milesConversion": {
+           "convertedMiles": {
+            "base": 42725,
+            "total": 48314,
+            "totalTaxes": 5589
+           },
+           "remainingNonConverted": {
+            "total": 0,
+            "currencyCode": "CAD",
+            "totalTaxes": 0
+           }
+          }
+         }
+        ],
+        "totalPrices": [
+         {
+          "base": 0,
+          "total": 5589,
+          "currencyCode": "CAD",
+          "totalTaxes": 5589
+         }
+        ],
+        "isRedemption": false,
+        "milesConversion": {
+         "convertedMiles": {
+          "base": 42725,
+          "total": 48314,
+          "totalTaxes": 5589
+         },
+         "remainingNonConverted": {
+          "total": 0,
+          "currencyCode": "CAD",
+          "totalTaxes": 0
+         }
+        }
+       },
+       "milesConversion": {
+        "convertedMiles": {
+         "base": 42725,
+         "total": 48314,
+         "totalTaxes": 5589
+        },
+        "remainingNonConverted": {
+         "total": 0
+        }
+       }
+      }
+     },
+     {
+      "airBoundId": "BC1-1-1I1ACZ_CPV3QUGKU3NTBC2KQ408E3FDLKJC",
+      "fareFamilyCode": "EXECLAT",
+      "availabilityDetails": [
+       {
+        "flightId": "SEG-AC353-YOWYYC-2026-11-18-0750",
+        "cabin": "business",
+        "bookingClass": "P",
+        "statusCode": "HK",
+        "quota": 5,
+        "mileagePercentage": 80.74
+       },
+       {
+        "flightId": "SEG-AC209-YYCYVR-2026-11-18-1300",
+        "cabin": "business",
+        "bookingClass": "P",
+        "statusCode": "HK",
+        "quota": 5,
+        "mileagePercentage": 19.26
+       }
+      ],
+      "fareInfos": [
+       {
+        "fareType": "unifares",
+        "fareClass": "PVAEROEF",
+        "pricedPassengerTypeCodes": [
+         "ADT"
+        ],
+        "travelerIds": [
+         "ADT-1"
+        ],
+        "ticketDesignator": "AE1",
+        "corporateCode": "169147",
+        "flightIds": [
+         "SEG-AC353-YOWYYC-2026-11-18-0750",
+         "SEG-AC209-YYCYVR-2026-11-18-1300"
+        ]
+       }
+      ],
+      "prices": {
+       "unitPrices": [
+        {
+         "travelerIds": [
+          "ADT-1"
+         ],
+         "prices": [
+          {
+           "base": 0,
+           "total": 5589,
+           "currencyCode": "CAD",
+           "taxes": [
+            {
+             "value": 0,
+             "currencyCode": "CAD",
+             "code": "YQYR"
+            }
+           ],
+           "totalTaxes": 5589
+          }
+         ],
+         "milesConversion": {
+          "convertedMiles": {
+           "base": 54625,
+           "total": 60214,
+           "totalTaxes": 5589
+          },
+          "remainingNonConverted": {
+           "total": 0,
+           "currencyCode": "CAD",
+           "totalTaxes": 0
+          }
+         }
+        }
+       ],
+       "totalPrices": [
+        {
+         "base": 0,
+         "total": 5589,
+         "currencyCode": "CAD",
+         "totalTaxes": 5589
+        }
+       ],
+       "isRedemption": false,
+       "milesConversion": {
+        "convertedMiles": {
+         "base": 54625,
+         "total": 60214,
+         "totalTaxes": 5589
+        },
+        "remainingNonConverted": {
+         "total": 0,
+         "currencyCode": "CAD",
+         "totalTaxes": 0
+        }
+       }
+      },
+      "airOffer": {
+       "totalPrice": {
+        "value": 5589,
+        "currencyCode": "CAD"
+       },
+       "prices": {
+        "unitPrices": [
+         {
+          "travelerIds": [
+           "ADT-1"
+          ],
+          "prices": [
+           {
+            "base": 0,
+            "total": 5589,
+            "currencyCode": "CAD",
+            "taxes": [
+             {
+              "value": 0,
+              "currencyCode": "CAD",
+              "code": "YQYR"
+             }
+            ],
+            "totalTaxes": 5589
+           }
+          ],
+          "milesConversion": {
+           "convertedMiles": {
+            "base": 54625,
+            "total": 60214,
+            "totalTaxes": 5589
+           },
+           "remainingNonConverted": {
+            "total": 0,
+            "currencyCode": "CAD",
+            "totalTaxes": 0
+           }
+          }
+         }
+        ],
+        "totalPrices": [
+         {
+          "base": 0,
+          "total": 5589,
+          "currencyCode": "CAD",
+          "totalTaxes": 5589
+         }
+        ],
+        "isRedemption": false,
+        "milesConversion": {
+         "convertedMiles": {
+          "base": 54625,
+          "total": 60214,
+          "totalTaxes": 5589
+         },
+         "remainingNonConverted": {
+          "total": 0,
+          "currencyCode": "CAD",
+          "totalTaxes": 0
+         }
+        }
+       },
+       "milesConversion": {
+        "convertedMiles": {
+         "base": 54625,
+         "total": 60214,
+         "totalTaxes": 5589
+        },
+        "remainingNonConverted": {
+         "total": 0
+        }
+       }
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "dictionaries": {
+  "flight": {
+   "SEG-AC353-YOWYYC-2026-11-18-0750": {
+    "marketingAirlineCode": "AC",
+    "operatingAirlineCode": "AC",
+    "marketingFlightNumber": "353",
+    "departure": {
+     "locationCode": "YOW",
+     "dateTime": "2026-11-18T07:50:00.000-05:00"
+    },
+    "arrival": {
+     "locationCode": "YYC",
+     "dateTime": "2026-11-18T11:35:00.000-06:00"
+    },
+    "aircraftCode": "223",
+    "duration": 17100,
+    "isOpenSegment": false,
+    "secureFlightIndicator": false
+   },
+   "SEG-AC209-YYCYVR-2026-11-18-1300": {
+    "marketingAirlineCode": "AC",
+    "operatingAirlineCode": "AC",
+    "marketingFlightNumber": "209",
+    "departure": {
+     "locationCode": "YYC",
+     "dateTime": "2026-11-18T13:00:00.000-06:00"
+    },
+    "arrival": {
+     "locationCode": "YVR",
+     "dateTime": "2026-11-18T13:47:00.000-07:00",
+     "terminal": "M"
+    },
+    "aircraftCode": "223",
+    "duration": 6420,
+    "isOpenSegment": false,
+    "secureFlightIndicator": false
+   }
+  },
+  "currency": {
+   "CAD": {
+    "name": "CANADIAN DOLLAR",
+    "decimalPlaces": 2
+   }
+  }
+ }
+}
