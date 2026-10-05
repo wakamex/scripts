@@ -15,8 +15,10 @@ cash side comes from Google Flights. Each itinerary that appears in both is valu
 
     cents per point = (cash fare - award taxes and fees) / points * 100
 
-and every check is appended to a CSV log. Each run also keeps its raw award responses,
-cash fares and computed results in its own folder under ~/.local/share/aeroplan_value/runs/.
+and every check is appended to a CSV log. Each run also keeps, in its own folder under
+~/.local/share/aeroplan_value/runs/, the query and tool commit (meta.json), Air Canada's raw award
+responses (award.json), Google's raw results data (cash_raw.json), the parsed cash fares (cash.json)
+and the computed results (results.json).
 
 Sign the bridge in when its session expires with --sign-in: it asks Aeroplan to email the one-time
 code and reads it from Gmail with the app password git send-email uses. --code enters a code by hand.
@@ -297,7 +299,7 @@ def parse_google_flights(payload):
     return itineraries
 
 
-def fetch_cash(origin, destination, day, adults, include_basic=False):
+def fetch_cash(origin, destination, day, adults, include_basic=False, run_dir=None):
     """Google Flights fares for the same day, as itineraries with a total cash price in CAD."""
     import fast_flights as ff
 
@@ -310,6 +312,9 @@ def fetch_cash(origin, destination, day, adults, include_basic=False):
     if not script:
         sys.exit("error: Google Flights returned no results data")
     payload = json.loads(script.group(1).split("data:", 1)[1].rsplit(",", 1)[0])
+    if run_dir:
+        # Google's full results data, so later parser changes can re-read this run.
+        (run_dir / "cash_raw.json").write_text(json.dumps({"query_url": query.url(), "payload": payload}))
     return parse_google_flights(payload)
 
 
@@ -404,10 +409,18 @@ def main(argv=None):
 
     run_dir = RUNS / f"{datetime.now():%Y%m%dT%H%M%S}_{args.origin}-{args.destination}_{args.date}_{args.adults}ad"
     run_dir.mkdir(parents=True, mode=0o700)
+    commit = subprocess.run(["git", "-C", str(Path(__file__).resolve().parent), "rev-parse", "HEAD"],
+                            capture_output=True, text=True).stdout.strip()
+    dirty = subprocess.run(["git", "-C", str(Path(__file__).resolve().parent), "status", "--porcelain", "--", Path(__file__).name],
+                           capture_output=True, text=True).stdout.strip()
+    (run_dir / "meta.json").write_text(json.dumps({
+        "started": datetime.now().isoformat(timespec="seconds"), "origin": args.origin, "destination": args.destination,
+        "date": args.date, "adults": args.adults, "include_basic": args.include_basic, "target": args.target,
+        "comparable_fare": COMPARABLE_FARE, "aeroplan_value_commit": commit + ("+dirty" if dirty else "")}, indent=1))
     raw = fetch_award(args.origin, args.destination, args.date, args.adults, run_dir)
     awards = [it for body in raw for it in parse_award_response(body)]
     log(f"parsed {len(awards)} award options; fetching cash fares")
-    cash = fetch_cash(args.origin, args.destination, args.date, args.adults, args.include_basic)
+    cash = fetch_cash(args.origin, args.destination, args.date, args.adults, args.include_basic, run_dir)
     (run_dir / "cash.json").write_text(json.dumps([as_dict(it) for it in cash], indent=1))
     rows = match(awards, cash)
     rows.sort(key=lambda it: -(cents_per_point(it.cash, it.taxes, it.points) or -1))
