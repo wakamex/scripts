@@ -5,7 +5,10 @@ readonly YT_DLP_VERSION="2026.8.19"
 
 usage() {
     cat <<'EOF'
-Usage: yt.sh [-a] [--yt-dlp-order] [AUTH_OPTIONS] [-o OUTPUT] URL [START_SECONDS [END_SECONDS]]
+Usage: yt.sh [-a] [--yt-dlp-order] [AUTH_OPTIONS] [-o OUTPUT] URL|FILE [START_SECONDS [END_SECONDS]]
+
+  FILE is a local audio or video file to convert and trim instead of
+  downloading a URL.
 
   -a, --audio-only  Download audio and convert it to MP3.
   --yt-dlp-order     Use yt-dlp's built-in video ordering instead of the
@@ -27,6 +30,7 @@ Examples:
   yt.sh 'https://www.youtube.com/watch?v=VIDEO_ID'
   yt.sh --yt-dlp-order 'https://www.youtube.com/watch?v=VIDEO_ID'
   yt.sh -o clip.mp4 'https://www.youtube.com/watch?v=VIDEO_ID' 292 295
+  yt.sh -a -o clip.mp3 recording.mp4 52 92
 EOF
 }
 
@@ -103,6 +107,8 @@ done
 }
 
 url=$1
+local_file=false
+[[ -f "$url" ]] && local_file=true
 start_time=${2:-}
 end_time=${3:-}
 
@@ -132,13 +138,13 @@ else
     expected_stream=video
 fi
 
-require_command uvx
 require_command ffmpeg
 require_command ffprobe
-if ! $audio_only && $quality_score && [[ -z "$supplied_cookie_file" ]]; then
+$local_file || require_command uvx
+if ! $local_file && ! $audio_only && $quality_score && [[ -z "$supplied_cookie_file" ]]; then
     require_command python3
 fi
-if [[ -n "$firefox_ssh" ]]; then
+if ! $local_file && [[ -n "$firefox_ssh" ]]; then
     require_command ssh
     require_command deno
 fi
@@ -226,7 +232,24 @@ download_with_retry() {
     run_yt_dlp "$cookie_file" "$@"
 }
 
-if $audio_only; then
+if $local_file; then
+    # Convert and trim in one ffmpeg pass so audio is encoded only once.
+    ffmpeg_args=(-y -hide_banner -loglevel error)
+    [[ -z "$start_time" ]] || ffmpeg_args+=(-ss "$start_time")
+    [[ -z "$end_time" ]] || ffmpeg_args+=(-to "$end_time")
+    if $audio_only; then
+        downloaded="$stage_directory/local.mp3"
+        ffmpeg "${ffmpeg_args[@]}" -i "$url" -vn -c:a libmp3lame -q:a 2 "$downloaded"
+    else
+        downloaded="$stage_directory/local.mp4"
+        # Without a trim, remux losslessly. A trim re-encodes so the cut lands
+        # on the requested time rather than the nearest keyframe.
+        codec_args=()
+        [[ -n "$start_time" ]] || codec_args=(-c copy)
+        ffmpeg "${ffmpeg_args[@]}" -i "$url" "${codec_args[@]}" "$downloaded"
+    fi
+    start_time=""
+elif $audio_only; then
     # Some YouTube livestream archives expose a higher-ranked Opus track that is
     # silent while the AAC/M4A track contains the program audio. Prefer M4A and
     # retain the generic best-audio fallback for videos without one.
