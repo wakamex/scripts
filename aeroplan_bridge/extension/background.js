@@ -2,7 +2,7 @@
 // by loading Aeroplan's award search page in a dedicated tab of this signed-in browser profile.
 
 const HOST = "ca.mihaicosma.aeroplan_bridge";
-const SCRIPT_VERSION = "2.0";  // reported in hello, to confirm Chrome is running this copy of the script
+const SCRIPT_VERSION = "2.5";  // reported in hello, to confirm Chrome is running this copy of the script
 const SEARCH_URL = "https://www.aircanada.com/aeroplan/redeem/availability/outbound";
 const PAGE_TIMEOUT_MS = 60000;   // time allowed for the page to load and search
 const SETTLE_MS = 4000;          // later result pages arrive shortly after the first
@@ -88,23 +88,58 @@ async function signIn(message) {
   const target = { tabId: tab.id };
   const send = (method, params) => chrome.debugger.sendCommand(target, method, params);
   const pause = ms => new Promise(r => setTimeout(r, ms));
+  const evaluate = async expression => {
+    const { result, exceptionDetails } = await send("Runtime.evaluate", { returnByValue: true, expression });
+    if (exceptionDetails) throw new Error(`page script: ${exceptionDetails.exception?.description || exceptionDetails.text}`);
+    return result.value;
+  };
   // The page keeps hidden copies of its login screens, so pick the element the user can actually
   // click: scrolled into view and topmost at its own centre.
-  const locate = async (filter) => {
-    const { result } = await send("Runtime.evaluate", { returnByValue: true, expression: `(() => {
-      for (const e of [...document.querySelectorAll('input, button, a')].filter(${filter})) {
+  const locate = async (filter, last = false) => {
+    return evaluate(`(() => {
+      const found = [...document.querySelectorAll('input, button, a')].filter(${filter});
+      for (const e of ${last} ? found.reverse() : found) {
         if (e.offsetParent === null) continue;
         e.scrollIntoView({ block: "center" });
         const r = e.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
         const hit = document.elementFromPoint(x, y);
         if (hit && (hit === e || e.contains(hit) || hit.contains(e))) return [x, y];
       }
-      return null; })()` });
-    return result.value;
+      return null; })()`);
   };
   const centre = selector => locate(`e => e.matches(${JSON.stringify(selector)})`);
-  // The control whose label is exactly `label` (the code screen also shows "Resend").
-  const centreOfLabel = label => locate(`e => (e.value || e.innerText || "").trim() === ${JSON.stringify(label)}`);
+  // The code screen has decoy copies of its links, so consider any element whose own text is exactly
+  // `label`, keep only those the user could click (visible, on top at their centre), and log them all.
+  const centreOfLabel = async (label, last = false) => {
+    const { at, seen } = await evaluate(`(() => {
+      const label = ${JSON.stringify(label)};
+      const own = e => e.value !== undefined && e.tagName === "INPUT" ? (e.value || "").trim()
+        : [...e.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join("").trim();
+      const all = [...document.querySelectorAll("*")].filter(e => own(e) === label);
+      const seen = all.map(e => {
+        const r = e.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
+        const visible = e.offsetParent !== null && r.width > 0 && r.height > 0;
+        const hit = visible && r.y >= 0 && r.y < innerHeight ? document.elementFromPoint(x, y) : null;
+        const top = !!hit && (hit === e || e.contains(hit) || hit.contains(e));
+        return { tag: e.tagName, cls: String(e.className).slice(0, 40), visible, top, x: Math.round(x), y: Math.round(y) };
+      });
+      const usable = all.map((e, i) => [e, seen[i]]).filter(([e, s]) => s.visible);
+      const pick = (${last} ? usable.reverse() : usable).find(([e]) => {
+        e.scrollIntoView({ block: "center" });
+        const r = e.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
+        const hit = document.elementFromPoint(x, y);
+        return hit && (hit === e || e.contains(hit) || hit.contains(e));
+      });
+      let at = null;
+      if (pick) { const r = pick[0].getBoundingClientRect(); at = [r.x + r.width / 2, r.y + r.height / 2]; }
+      return { at, seen };
+    })()`);
+    note(`sign-in: "${label}" candidates ${JSON.stringify(seen)} -> ${JSON.stringify(at)}`);
+    return at;
+  };
+  // Aeroplan texts a code at sign-in and opens the phone section's code box; the email section comes
+  // after it, so its box is the last one.
+  const codeBox = () => locate(`e => e.matches('input[name="code"], input[placeholder="Enter Code"]')`, true);
   const click = async ([x, y]) => {
     for (const type of ["mousePressed", "mouseReleased"]) {
       await send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
@@ -123,8 +158,8 @@ async function signIn(message) {
     note("sign-in: attached");
     if (message.code) {
       // Second step: the one-time code Aeroplan sends by text or email after the password.
-      const box = await centre('input[name="code"]') || await centre('input[placeholder="Enter Code"]');
-      const go = await centreOfLabel("Submit") || await centreOfLabel("Continue");  // email section, phone section
+      const box = await codeBox();
+      const go = await centreOfLabel("Submit", true) || await centreOfLabel("Continue", true);  // email section, phone section
       note(`sign-in: code form at ${JSON.stringify({ box, go })}`);
       if (!box || !go) throw new Error("code form not found");
       await click(box);
@@ -138,7 +173,7 @@ async function signIn(message) {
     }
     // Expired sessions pass through redirect pages (/clogin/pages/proxy) before the form appears.
     for (let i = 0; i < 15 && !message.code; i++) {
-      if (await centre('input[autocomplete="username"]') || await centreOfLabel("Send Code")) break;
+      if (await centre('input[autocomplete="username"]') || await centreOfLabel("Send Code") || await codeBox()) break;
       await pause(2000);
     }
     const user = await centre('input[autocomplete="username"]');
@@ -161,9 +196,10 @@ async function signIn(message) {
       throw new Error(`sign-in form not found on ${tab.url}`);
     }
     if (message.emailCode) {
-      // Ask for the one-time code by email, which aeroplan_value.py reads from Gmail.
-      const sendCode = await centreOfLabel("Send Code");
-      note(`sign-in: email Send Code at ${JSON.stringify(sendCode)}`);
+      // Ask for the code by email: the email section's "Send Code", or its "Resend" when that section is
+      // already open. aeroplan_value.py reads the code from Gmail.
+      const sendCode = await centreOfLabel("Send Code", true) || await centreOfLabel("Resend", true);
+      note(`sign-in: email code request at ${JSON.stringify(sendCode)}`);
       if (sendCode) {
         await click(sendCode);
         await pause(4000);
