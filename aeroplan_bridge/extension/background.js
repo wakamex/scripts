@@ -2,7 +2,7 @@
 // by loading Aeroplan's award search page in a dedicated tab of this signed-in browser profile.
 
 const HOST = "ca.mihaicosma.aeroplan_bridge";
-const SCRIPT_VERSION = "1.9";  // reported in hello, to confirm Chrome is running this copy of the script
+const SCRIPT_VERSION = "2.0";  // reported in hello, to confirm Chrome is running this copy of the script
 const SEARCH_URL = "https://www.aircanada.com/aeroplan/redeem/availability/outbound";
 const PAGE_TIMEOUT_MS = 60000;   // time allowed for the page to load and search
 const SETTLE_MS = 4000;          // later result pages arrive shortly after the first
@@ -135,6 +135,11 @@ async function signIn(message) {
       await pause(15000);
       const done = await chrome.tabs.get(tab.id);
       return reply({ type: "result", id: message.id, ok: !done.url.includes("/clogin/"), url: done.url, title: done.title });
+    }
+    // Expired sessions pass through redirect pages (/clogin/pages/proxy) before the form appears.
+    for (let i = 0; i < 15 && !message.code; i++) {
+      if (await centre('input[autocomplete="username"]') || await centreOfLabel("Send Code")) break;
+      await pause(2000);
     }
     const user = await centre('input[autocomplete="username"]');
     const password = await centre('input[autocomplete="current-password"]');

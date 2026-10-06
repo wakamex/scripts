@@ -58,6 +58,9 @@ LOG_FIELDS = ["checked", "origin", "destination", "date", "adults", "flights", "
 # Standard award prices are compared with it. Flex, Latitude, Premium Economy and Business award
 # prices are listed with --all but get no cash comparison.
 COMPARABLE_FARE = "STANDARD"
+# For business, Google's cheapest business fare is compared with Air Canada's Business Standard award
+# (EXECSTAND); itineraries that mix business and economy segments are not compared.
+COMPARABLE_FARES = {"economy": COMPARABLE_FARE, "business": "EXECSTAND"}
 CABINS = {"eco": "economy", "ecoPremium": "premium", "premium": "premium", "business": "business", "first": "first"}
 
 
@@ -74,6 +77,7 @@ class Itinerary:
     segments: list[Segment]
     cabin: str = ""
     fare: str = ""  # Air Canada fare family, e.g. STANDARD, FLEX, LATITUDE, EXECSTAND
+    mixed_cabin: bool = False
     points: int | None = None
     taxes: float | None = None
     cash: float | None = None
@@ -137,6 +141,7 @@ def parse_award_response(body):
             cabin = ((bound.get("availabilityDetails") or [{}])[0]).get("cabin", "")
             itineraries.append(Itinerary(
                 segments=segments, cabin=CABINS.get(cabin, cabin), fare=bound.get("fareFamilyCode", ""),
+                mixed_cabin=bool(bound.get("isMixedCabin")),
                 points=int(points), taxes=None if taxes is None else taxes / 10 ** decimals))
     return itineraries
 
@@ -299,13 +304,13 @@ def parse_google_flights(payload):
     return itineraries
 
 
-def fetch_cash(origin, destination, day, adults, include_basic=False, run_dir=None):
+def fetch_cash(origin, destination, day, adults, include_basic=False, run_dir=None, seat="economy", raw_name="cash_raw.json"):
     """Google Flights fares for the same day, as itineraries with a total cash price in CAD."""
     import fast_flights as ff
 
     query = ff.create_query(
         flights=[ff.FlightQuery(date=day, from_airport=origin, to_airport=destination)],
-        trip="one-way", seat="economy", passengers=ff.Passengers(adults=adults),
+        trip="one-way", seat=seat, passengers=ff.Passengers(adults=adults),
         currency="CAD", language="en-US", exclude_basic_economy=not include_basic)
     html = ff.fetch_flights_html(query)
     script = re.search(r'<script class="ds:1"[^>]*>(.*?)</script>', html, re.S)
@@ -314,18 +319,18 @@ def fetch_cash(origin, destination, day, adults, include_basic=False, run_dir=No
     payload = json.loads(script.group(1).split("data:", 1)[1].rsplit(",", 1)[0])
     if run_dir:
         # Google's full results data, so later parser changes can re-read this run.
-        (run_dir / "cash_raw.json").write_text(json.dumps({"query_url": query.url(), "payload": payload}))
+        (run_dir / raw_name).write_text(json.dumps({"query_url": query.url(), "payload": payload}))
     return parse_google_flights(payload)
 
 
-def match(awards, cash):
+def match(awards, cash, fare=COMPARABLE_FARE):
     """Attach the cheapest cash fare to Standard award prices for the same flights (same airports and departures)."""
     cheapest = {}
     for c in cash:
         if c.key() not in cheapest or c.cash < cheapest[c.key()]:
             cheapest[c.key()] = c.cash
     for a in awards:
-        a.cash = cheapest.get(a.key()) if a.fare == COMPARABLE_FARE else None
+        a.cash = cheapest.get(a.key()) if a.fare == fare and not a.mixed_cabin else None
     return awards
 
 
@@ -353,13 +358,13 @@ def log_checks(rows, args, run_dir):
             })
 
 
-def print_table(rows, target):
+def print_table(rows, target, fare=COMPARABLE_FARE):
     print(f"{'flights':38s} {'fare':9s} {'points':>8s} {'taxes':>8s} {'cash':>8s} {'c/pt':>6s}  verdict")
     for it in rows:
         cpp = cents_per_point(it.cash, it.taxes, it.points)
         cash = "-" if it.cash is None else f"{it.cash:.0f}"
         value = "-" if cpp is None else f"{cpp:.2f}"
-        verdict = ("no cash match" if it.fare == COMPARABLE_FARE else "not compared") if cpp is None else ("use points" if cpp >= target else "pay cash")
+        verdict = ("no cash match" if it.fare == fare and not it.mixed_cabin else "not compared") if cpp is None else ("use points" if cpp >= target else "pay cash")
         print(f"{it.label()[:38]:38s} {it.fare[:9]:9s} {it.points:>8,} {it.taxes or 0:>8.2f} {cash:>8s} {value:>6s}  {verdict}")
 
 
@@ -377,6 +382,9 @@ def main(argv=None):
     parser.add_argument("--adults", type=int, default=1)
     parser.add_argument("--target", type=float, default=2.0, help="cents per point worth using points for (default 2.0)")
     parser.add_argument("--include-basic", action="store_true", help="compare against Basic economy fares too")
+    parser.add_argument("--cabin", choices=sorted(COMPARABLE_FARES), default="economy",
+                        help="cabin to compare: economy (Standard award vs non-Basic fare) or business "
+                             "(Business Standard award vs cheapest business fare; first-class fares are saved too)")
     parser.add_argument("--all", action="store_true", help="also list award itineraries with no matching cash fare")
     parser.add_argument("--json", action="store_true", help="print results as JSON")
     parser.add_argument("--history", action="store_true", help=f"print the log of past checks ({LOG})")
@@ -407,7 +415,8 @@ def main(argv=None):
     args.origin, args.destination = args.origin.upper(), args.destination.upper()
     date.fromisoformat(args.date)
 
-    run_dir = RUNS / f"{datetime.now():%Y%m%dT%H%M%S}_{args.origin}-{args.destination}_{args.date}_{args.adults}ad"
+    cabin_tag = "" if args.cabin == "economy" else f"_{args.cabin}"
+    run_dir = RUNS / f"{datetime.now():%Y%m%dT%H%M%S}_{args.origin}-{args.destination}_{args.date}_{args.adults}ad{cabin_tag}"
     run_dir.mkdir(parents=True, mode=0o700)
     commit = subprocess.run(["git", "-C", str(Path(__file__).resolve().parent), "rev-parse", "HEAD"],
                             capture_output=True, text=True).stdout.strip()
@@ -416,13 +425,18 @@ def main(argv=None):
     (run_dir / "meta.json").write_text(json.dumps({
         "started": datetime.now().isoformat(timespec="seconds"), "origin": args.origin, "destination": args.destination,
         "date": args.date, "adults": args.adults, "include_basic": args.include_basic, "target": args.target,
-        "comparable_fare": COMPARABLE_FARE, "aeroplan_value_commit": commit + ("+dirty" if dirty else "")}, indent=1))
+        "cabin": args.cabin, "comparable_fare": COMPARABLE_FARES[args.cabin], "aeroplan_value_commit": commit + ("+dirty" if dirty else "")}, indent=1))
     raw = fetch_award(args.origin, args.destination, args.date, args.adults, run_dir)
     awards = [it for body in raw for it in parse_award_response(body)]
     log(f"parsed {len(awards)} award options; fetching cash fares")
-    cash = fetch_cash(args.origin, args.destination, args.date, args.adults, args.include_basic, run_dir)
+    cash = fetch_cash(args.origin, args.destination, args.date, args.adults, args.include_basic, run_dir, seat=args.cabin)
+    if args.cabin == "business":
+        # Saved for reference: on routes where an airline sells a separate first cabin, its fares show here.
+        first = fetch_cash(args.origin, args.destination, args.date, args.adults, True, run_dir, seat="first",
+                           raw_name="cash_first_raw.json")
+        (run_dir / "cash_first.json").write_text(json.dumps([as_dict(it) for it in first], indent=1))
     (run_dir / "cash.json").write_text(json.dumps([as_dict(it) for it in cash], indent=1))
-    rows = match(awards, cash)
+    rows = match(awards, cash, COMPARABLE_FARES[args.cabin])
     rows.sort(key=lambda it: -(cents_per_point(it.cash, it.taxes, it.points) or -1))
     shown = rows if args.all else [it for it in rows if it.cash is not None]
     log_checks(shown, args, run_dir)
@@ -432,7 +446,7 @@ def main(argv=None):
     else:
         print(f"{args.origin}-{args.destination} {args.date}, {args.adults} adult(s); "
               f"{len(awards)} award options, {len(cash)} cash fares, {len(shown)} shown")
-        print_table(shown, args.target)
+        print_table(shown, args.target, COMPARABLE_FARES[args.cabin])
     return 0
 
 
