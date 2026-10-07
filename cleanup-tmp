@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+if [[ $# -ne 1 || ! "$1" =~ ^[0-9]+$ ]]; then
+    echo "Usage: $0 DAYS" >&2
+    echo "Example: $0 7" >&2
+    exit 2
+fi
+
+days="$1"
+age_minutes=$((10#$days * 24 * 60))
+uid="$EUID"
+result=0
+
+if (( uid == 0 )); then
+    echo "Refusing to clean /tmp as root; run this as your normal user." >&2
+    exit 1
+fi
+
+# Other programs create and remove /tmp entries while this runs, so
+# -ignore_readdir_race skips names that vanish before find reaches them.
+
+# Delete only this user's old regular files and symlinks. Pruning directories
+# owned by other users also skips systemd-private service sandboxes. Make only
+# each qualifying file's parent writable to handle read-only cache layouts.
+if ! find /tmp \
+    -xdev \
+    -ignore_readdir_race \
+    -mindepth 1 \
+    \( -type d ! -uid "$uid" -prune \) -o \
+    \( -uid "$uid" \( -type f -o -type l \) -mmin "+${age_minutes}" \
+        -execdir /usr/bin/bash -c '[[ ! -O . ]] || /usr/bin/chmod u+w .; /usr/bin/rm -f -- "$@"' bash {} + \)
+then
+    result=1
+fi
+
+# Delete old, empty directories below top-level directories owned by this user.
+# This pass still runs when deleting a file above fails.
+shopt -s nullglob dotglob
+top_dirs=()
+for path in /tmp/*; do
+    if [[ -d "$path" && ! -L "$path" && -O "$path" ]]; then
+        top_dirs+=("$path")
+    fi
+done
+
+if (( ${#top_dirs[@]} > 0 )); then
+    if ! find "${top_dirs[@]}" \
+        -xdev \
+        -ignore_readdir_race \
+        -depth \
+        -type d \
+        -uid "$uid" \
+        -empty \
+        -mmin "+${age_minutes}" \
+        -execdir /usr/bin/bash -c '[[ ! -O . ]] || /usr/bin/chmod u+w .' \; \
+        -delete
+    then
+        result=1
+    fi
+fi
+
+exit "$result"
