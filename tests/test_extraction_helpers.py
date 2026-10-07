@@ -329,3 +329,16 @@ def test_parse_reddit_dash_manifest() -> None:
 def test_manifest_without_video_is_rejected() -> None:
     with pytest.raises(extract_reddit.ExtractionError, match="no video"):
         download_reddit_video.parse_manifest(b'<MPD><Period><AdaptationSet contentType="audio"/></Period></MPD>')
+
+
+def test_request_json_returns_payload_and_rejects_bad_responses() -> None:
+    def session_for(status: int, content_type: str, body: object) -> SimpleNamespace:
+        response = SimpleNamespace(status_code=status, headers={"content-type": content_type}, json=lambda: body)
+        return SimpleNamespace(get=lambda *args, **kwargs: response)
+
+    payload = {"instances": []}
+    assert extract_reddit.request_json(session_for(200, "application/json", payload), "https://x", 5) == payload
+    with pytest.raises(extract_reddit.ExtractionError):
+        extract_reddit.request_json(session_for(429, "application/json", payload), "https://x", 5)
+    with pytest.raises(extract_reddit.ExtractionError):
+        extract_reddit.request_json(session_for(200, "text/html", payload), "https://x", 5)

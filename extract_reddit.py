@@ -79,6 +79,15 @@ def request_json(
         timeout=timeout,
         allow_redirects=True,
     )
+    if response.status_code != HTTP_OK:
+        raise ExtractionError(f"{url} returned HTTP {response.status_code}")
+    content_type = response.headers.get("content-type", "").lower()
+    if "json" not in content_type and not allow_text_content_type:
+        raise ExtractionError(f"{url} returned {content_type or 'an unknown content type'}, not JSON")
+    try:
+        return response.json()
+    except ValueError as error:
+        raise ExtractionError(f"{url} returned invalid JSON") from error
 
 
 def permalink_ids(canonical_url: str) -> tuple[str, str | None]:
@@ -95,15 +104,6 @@ def permalink_ids(canonical_url: str) -> tuple[str, str | None]:
 
 def reddit_embed_url(canonical_url: str) -> str:
     return urlunsplit(("https", "embed.reddit.com", urlsplit(canonical_url).path, "", ""))
-    if response.status_code != HTTP_OK:
-        raise ExtractionError(f"{url} returned HTTP {response.status_code}")
-    content_type = response.headers.get("content-type", "").lower()
-    if "json" not in content_type and not allow_text_content_type:
-        raise ExtractionError(f"{url} returned {content_type or 'an unknown content type'}, not JSON")
-    try:
-        return response.json()
-    except ValueError as error:
-        raise ExtractionError(f"{url} returned invalid JSON") from error
 
 
 def format_time(timestamp: object) -> str:
